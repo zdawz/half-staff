@@ -273,8 +273,17 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col justify-between transition-colors duration-300">
+      {/* Skip to Main Content Link for Keyboard & Screen Reader Users */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-full focus:bg-amber-600 focus:px-4 focus:py-2 focus:text-xs focus:font-semibold focus:text-white focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
+
       {/* Subtle ambient background glow */}
       <div
+        aria-hidden="true"
         className={`pointer-events-none fixed inset-x-0 top-0 h-96 opacity-40 dark:opacity-35 blur-3xl transition-colors duration-700 ${
           isHalfStaff
             ? 'bg-gradient-to-b from-amber-300/35 via-rose-200/15 to-transparent dark:from-amber-600/25 dark:via-rose-900/10'
@@ -286,12 +295,15 @@ export function App() {
       <header className="relative z-20 mx-auto flex w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-3xl items-center justify-between gap-2 px-4 sm:px-6 pt-4 pb-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <div className="relative flex min-w-0 items-center">
-            <MapPin className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
+            <MapPin
+              aria-hidden="true"
+              className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400"
+            />
             <select
               aria-label="Select State or Territory"
               value={selectedState}
               onChange={(e) => handleStateChange(e.target.value)}
-              className="h-8 max-w-[180px] sm:max-w-none truncate appearance-none rounded-full border border-slate-200 bg-white/90 pl-7 pr-6 text-xs font-medium text-slate-800 shadow-xs transition hover:border-slate-300 focus:border-slate-400 focus:outline-none dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:focus:border-slate-500"
+              className="h-9 max-w-[180px] sm:max-w-none truncate appearance-none rounded-full border border-slate-300 bg-white/95 pl-7 pr-6 text-xs font-medium text-slate-800 shadow-xs transition hover:border-slate-400 focus:border-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:focus:border-slate-500"
             >
               {US_STATES.map((st) => (
                 <option
@@ -303,7 +315,10 @@ export function App() {
                 </option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-2 h-3 w-3 shrink-0 text-slate-500 dark:text-slate-400" />
+            <ChevronDown
+              aria-hidden="true"
+              className="pointer-events-none absolute right-2 h-3 w-3 shrink-0 text-slate-600 dark:text-slate-400"
+            />
           </div>
 
           <button
@@ -312,9 +327,10 @@ export function App() {
             disabled={locating}
             title="Auto-detect my state"
             aria-label="Auto-detect my state"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-700 shadow-xs transition hover:border-slate-400 hover:text-slate-950 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
           >
             <Compass
+              aria-hidden="true"
               className={`h-3.5 w-3.5 shrink-0 ${locating ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
             />
           </button>
@@ -325,18 +341,22 @@ export function App() {
             <button
               type="button"
               onClick={toggleAlerts}
+              aria-pressed={alertsEnabled}
               title={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
               aria-label={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
-              className={`flex h-8 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap shadow-xs transition ${
+              className={`flex h-9 shrink-0 items-center gap-1 rounded-full border px-3 text-xs font-medium whitespace-nowrap shadow-xs transition ${
                 alertsEnabled
-                  ? 'border-amber-500/50 bg-amber-500/15 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300'
-                  : 'border-slate-200 bg-white/90 text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200'
+                  ? 'border-amber-500/60 bg-amber-500/15 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300'
+                  : 'border-slate-300 bg-white/95 text-slate-700 hover:border-slate-400 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white'
               }`}
             >
               {alertsEnabled ? (
-                <BellRing className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <BellRing
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-400"
+                />
               ) : (
-                <Bell className="h-3.5 w-3.5 shrink-0" />
+                <Bell aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
               )}
               <span className="text-[11px]">{alertsEnabled ? 'Alerts On' : 'Alerts'}</span>
             </button>
@@ -345,14 +365,15 @@ export function App() {
           <button
             type="button"
             onClick={toggleTheme}
+            aria-pressed={theme === 'dark'}
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-700 shadow-xs transition hover:border-slate-400 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
           >
             {theme === 'dark' ? (
-              <Sun className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+              <Sun aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-amber-400" />
             ) : (
-              <Moon className="h-3.5 w-3.5 shrink-0 text-slate-700" />
+              <Moon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-700" />
             )}
           </button>
 
@@ -362,24 +383,36 @@ export function App() {
             disabled={refreshing}
             title="Refresh live flag status"
             aria-label="Refresh live flag status"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-700 shadow-xs transition hover:border-slate-400 hover:text-slate-950 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
           >
             <RefreshCw
+              aria-hidden="true"
               className={`h-3.5 w-3.5 shrink-0 ${refreshing ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
             />
           </button>
         </div>
       </header>
 
-      {/* Optional Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-14 left-1/2 z-50 max-w-[90vw] -translate-x-1/2 truncate rounded-full border border-slate-300 bg-white/95 px-4 py-1.5 text-xs font-medium whitespace-nowrap text-slate-800 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200">
-          {toastMessage}
-        </div>
-      )}
+      {/* Live Toast Region for Screen Readers & Visual Feedback */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="pointer-events-none fixed top-16 left-1/2 z-50 -translate-x-1/2"
+      >
+        {toastMessage && (
+          <div className="max-w-[90vw] truncate rounded-full border border-slate-300 bg-white/95 px-4 py-1.5 text-xs font-medium whitespace-nowrap text-slate-800 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200">
+            {toastMessage}
+          </div>
+        )}
+      </div>
 
       {/* Main Focal Point: Simple At-A-Glance View */}
-      <main className="relative z-10 mx-auto flex w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-3xl flex-1 flex-col items-center justify-center px-5 sm:px-8 py-6 text-center">
+      <main
+        id="main-content"
+        aria-busy={loading}
+        className="relative z-10 mx-auto flex w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-3xl flex-1 flex-col items-center justify-center px-5 sm:px-8 py-6 text-center"
+      >
         {/* Animated 50-Star, 13-Stripe Flagpole Icon */}
         <FlagpoleGraphic
           isHalfStaff={isHalfStaff}
@@ -388,15 +421,23 @@ export function App() {
         />
 
         {loading ? (
-          <div className="mt-4 w-full max-w-md animate-pulse space-y-2.5">
+          <div
+            role="status"
+            aria-label="Loading live flag status"
+            className="mt-4 w-full max-w-md animate-pulse space-y-2.5"
+          >
             <div className="mx-auto h-7 w-40 rounded-lg bg-slate-200 dark:bg-slate-800" />
             <div className="mx-auto h-4 w-64 rounded bg-slate-200/70 dark:bg-slate-800/70" />
+            <span className="sr-only">Loading current flag status...</span>
           </div>
         ) : isHalfStaff && primaryNotice ? (
           <div className="mt-3 w-full max-w-2xl">
             {/* Simple Status Label */}
-            <div className="inline-flex flex-wrap items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-600 dark:bg-amber-400 animate-pulse" />
+            <div className="inline-flex flex-wrap items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-amber-800 dark:text-amber-300">
+              <span
+                aria-hidden="true"
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-600 dark:bg-amber-400 animate-pulse"
+              />
               <span>
                 Half-Staff &middot;{' '}
                 {primaryNotice.scope === 'federal'
@@ -411,37 +452,42 @@ export function App() {
             </h1>
 
             {/* 1–2 Sentence Reason with Inline Source Links */}
-            <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300 sm:text-base break-words">
+            <p className="mt-3 text-sm leading-relaxed text-slate-700 dark:text-slate-300 sm:text-base break-words">
               {primaryNotice.summary}{' '}
               <a
                 href={primaryNotice.sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-0.5 font-medium whitespace-nowrap text-amber-700 underline decoration-amber-600/40 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:text-amber-400 dark:decoration-amber-400/40 dark:hover:text-amber-300 dark:hover:decoration-amber-300"
+                className="inline-flex items-center gap-0.5 font-medium whitespace-nowrap text-amber-800 underline decoration-amber-700/50 underline-offset-4 transition hover:text-amber-950 hover:decoration-amber-800 dark:text-amber-300 dark:decoration-amber-400/40 dark:hover:text-amber-200 dark:hover:decoration-amber-300"
               >
                 <span>{primaryNotice.sourceLabel}</span>
-                <ExternalLink className="ml-0.5 h-3 w-3 shrink-0" />
+                <span className="sr-only"> (opens in new tab)</span>
+                <ExternalLink aria-hidden="true" className="ml-0.5 h-3 w-3 shrink-0" />
               </a>
               {primaryNotice.secondaryUrl && (
                 <>
-                  {' · '}
+                  <span aria-hidden="true">{' · '}</span>
                   <a
                     href={primaryNotice.secondaryUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-0.5 text-xs font-medium whitespace-nowrap text-slate-500 underline decoration-slate-400 underline-offset-4 transition hover:text-slate-800 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-slate-200"
+                    className="inline-flex items-center gap-0.5 text-xs font-medium whitespace-nowrap text-slate-600 underline decoration-slate-400 underline-offset-4 transition hover:text-slate-900 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-slate-200"
                   >
                     <span>{primaryNotice.secondaryLabel}</span>
-                    <ExternalLink className="ml-0.5 h-2.5 w-2.5 shrink-0" />
+                    <span className="sr-only"> (opens in new tab)</span>
+                    <ExternalLink aria-hidden="true" className="ml-0.5 h-2.5 w-2.5 shrink-0" />
                   </a>
                 </>
               )}
             </p>
 
             {/* Subtle Secondary Actions: Date Range, Read Proclamation, Google Calendar & .ics */}
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-slate-600 dark:text-slate-400">
               <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                <Calendar className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                <Calendar
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400"
+                />
                 {formatDateRange(
                   primaryNotice.dateStart,
                   primaryNotice.dateEnd,
@@ -449,46 +495,53 @@ export function App() {
                 )}
               </span>
 
-              <span>&middot;</span>
+              <span aria-hidden="true">&middot;</span>
 
               <button
                 type="button"
+                aria-expanded={showHeroFullText}
+                aria-controls="hero-full-text"
                 onClick={() => setShowHeroFullText((v) => !v)}
-                className="font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                className="py-0.5 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
               >
                 {showHeroFullText ? 'Hide full text' : 'Full text'}
               </button>
 
-              <span>&middot;</span>
+              <span aria-hidden="true">&middot;</span>
 
               <a
                 href={getGoogleCalendarUrl(primaryNotice)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                className="inline-flex items-center gap-1 py-0.5 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
               >
-                <CalendarPlus className="h-3 w-3 shrink-0" />
+                <CalendarPlus aria-hidden="true" className="h-3 w-3 shrink-0" />
                 <span>Google Calendar</span>
+                <span className="sr-only"> (opens in new tab)</span>
               </a>
 
-              <span>&middot;</span>
+              <span aria-hidden="true">&middot;</span>
 
               <button
                 type="button"
+                aria-label={`Download .ics calendar event for ${primaryNotice.title}`}
                 onClick={() => {
                   downloadNoticeIcs(primaryNotice);
                   showToast('Saved proclamation to calendar (.ics)');
                 }}
-                className="inline-flex items-center gap-1 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                className="inline-flex items-center gap-1 py-0.5 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
               >
-                <Download className="h-3 w-3 shrink-0" />
+                <Download aria-hidden="true" className="h-3 w-3 shrink-0" />
                 <span>.ics</span>
               </button>
             </div>
 
             {/* Expandable Full Text Drawer (never truncated or cut off) */}
             {showHeroFullText && (
-              <div className="mt-4 w-full rounded-2xl border border-slate-200 bg-white/90 p-4 sm:p-5 text-left text-xs sm:text-sm leading-relaxed text-slate-700 shadow-xs whitespace-pre-wrap break-words dark:border-slate-800/90 dark:bg-slate-900/70 dark:text-slate-200">
+              <div
+                id="hero-full-text"
+                className="mt-4 w-full rounded-2xl border border-slate-200 bg-white/95 p-4 sm:p-5 text-left text-xs sm:text-sm leading-relaxed text-slate-800 shadow-xs whitespace-pre-wrap break-words dark:border-slate-800/90 dark:bg-slate-900/70 dark:text-slate-200"
+              >
                 {primaryNotice.fullText || primaryNotice.summary}
               </div>
             )}
@@ -497,7 +550,10 @@ export function App() {
           <div className="mt-3 w-full max-w-xl">
             {/* Full-Staff Status Label */}
             <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-600 dark:bg-emerald-400" />
+              <span
+                aria-hidden="true"
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-600 dark:bg-emerald-400"
+              />
               <span>Full-Staff Today</span>
             </div>
 
@@ -506,7 +562,7 @@ export function App() {
             </h1>
 
             {/* Single Clean Sentence with Inline Source Links */}
-            <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300 sm:text-base">
+            <p className="mt-3 text-sm leading-relaxed text-slate-700 dark:text-slate-300 sm:text-base">
               The American flag is flying at full-staff in{' '}
               <span className="font-semibold text-slate-900 dark:font-medium dark:text-white">
                 {selectedStateName}
@@ -516,27 +572,30 @@ export function App() {
                 href="https://www.whitehouse.gov/presidential-actions/proclamations/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-700 hover:decoration-amber-600 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
+                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
               >
                 White House
+                <span className="sr-only"> (opens in new tab)</span>
               </a>
               ,{' '}
               <a
                 href={statePortalLink.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-700 hover:decoration-amber-600 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
+                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
               >
                 {statePortalLink.label}
+                <span className="sr-only"> (opens in new tab)</span>
               </a>
               , or{' '}
               <a
                 href={`https://halfstaff.org/state/${selectedState.toLowerCase()}/`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-700 hover:decoration-amber-600 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
+                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
               >
                 HalfStaff.org
+                <span className="sr-only"> (opens in new tab)</span>
               </a>
               .
             </p>
@@ -547,8 +606,10 @@ export function App() {
         <div className="mt-8 w-full">
           <button
             type="button"
+            aria-expanded={showMoreDrawer}
+            aria-controls="recent-orders-drawer"
             onClick={() => setShowMoreDrawer((v) => !v)}
-            className="mx-auto inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-xs font-medium text-slate-700 shadow-xs transition hover:border-slate-300 hover:bg-white hover:text-slate-950 dark:border-slate-800/90 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900 dark:hover:text-white"
+            className="mx-auto inline-flex min-h-9 items-center gap-1.5 rounded-full border border-slate-300 bg-white/95 px-4 py-2 text-xs font-medium text-slate-700 shadow-xs transition hover:border-slate-400 hover:bg-white hover:text-slate-950 dark:border-slate-800/90 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900 dark:hover:text-white"
           >
             <span>
               {showMoreDrawer
@@ -556,36 +617,51 @@ export function App() {
                 : `Recent ${selectedStateName} & U.S. orders (${recentNoticesForState.length})`}
             </span>
             {showMoreDrawer ? (
-              <ChevronUp className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
+              <ChevronUp
+                aria-hidden="true"
+                className="h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400"
+              />
             ) : (
-              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
+              <ChevronDown
+                aria-hidden="true"
+                className="h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400"
+              />
             )}
           </button>
 
           {/* Collapsible History & Live Sources Drawer */}
           {showMoreDrawer && (
-            <div className="mt-4 space-y-3 text-left animate-fadeIn">
+            <section
+              id="recent-orders-drawer"
+              aria-labelledby="recent-orders-heading"
+              className="mt-4 space-y-3 text-left animate-fadeIn"
+            >
+              <h2 id="recent-orders-heading" className="sr-only">
+                Recent {selectedStateName} and U.S. Half-Staff Orders
+              </h2>
+
               {recentNoticesForState.map((notice) => {
                 const isExpanded = expandedHistoryId === notice.id;
+                const fullTextId = `notice-full-text-${notice.id}`;
                 return (
                   <article
                     key={notice.id}
-                    className="rounded-2xl border border-slate-200/90 bg-white/90 p-4 sm:p-5 shadow-xs transition hover:border-slate-300 dark:border-slate-800/80 dark:bg-slate-900/60 dark:hover:border-slate-700/80"
+                    className="rounded-2xl border border-slate-200/90 bg-white/95 p-4 sm:p-5 shadow-xs transition hover:border-slate-300 dark:border-slate-800/80 dark:bg-slate-900/60 dark:hover:border-slate-700/80"
                   >
                     <div>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600 dark:text-slate-400">
                         <span
                           className={`font-semibold uppercase tracking-wider whitespace-nowrap ${
                             notice.scope === 'federal'
-                              ? 'text-blue-600 dark:text-blue-400'
-                              : 'text-amber-700 dark:text-amber-400'
+                              ? 'text-blue-700 dark:text-blue-400'
+                              : 'text-amber-800 dark:text-amber-300'
                           }`}
                         >
                           {notice.scope === 'federal'
                             ? 'Federal'
                             : notice.stateName || notice.stateCode}
                         </span>
-                        <span>&middot;</span>
+                        <span aria-hidden="true">&middot;</span>
                         <span className="whitespace-nowrap">
                           {formatDateRange(notice.dateStart, notice.dateEnd, notice.isOngoing)}
                         </span>
@@ -596,11 +672,14 @@ export function App() {
                     </div>
 
                     {!isExpanded ? (
-                      <p className="mt-1.5 text-xs sm:text-sm leading-relaxed text-slate-600 dark:text-slate-300 break-words">
+                      <p className="mt-1.5 text-xs sm:text-sm leading-relaxed text-slate-700 dark:text-slate-300 break-words">
                         {notice.summary}
                       </p>
                     ) : (
-                      <div className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed text-slate-800 whitespace-pre-wrap break-words dark:border-slate-800 dark:bg-slate-950/80 dark:text-slate-200">
+                      <div
+                        id={fullTextId}
+                        className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed text-slate-800 whitespace-pre-wrap break-words dark:border-slate-800 dark:bg-slate-950/80 dark:text-slate-200"
+                      >
                         {notice.fullText || notice.summary}
                       </div>
                     )}
@@ -611,40 +690,49 @@ export function App() {
                           href={notice.sourceUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 font-medium text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300"
+                          aria-label={`${notice.sourceLabel} for ${notice.title} (opens in new tab)`}
+                          className="inline-flex items-center gap-1 py-0.5 font-medium text-amber-800 hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-200"
                         >
                           <span className="sm:hidden">Source</span>
                           <span className="hidden sm:inline">{notice.sourceLabel}</span>
-                          <ExternalLink className="h-3 w-3 shrink-0" />
+                          <ExternalLink aria-hidden="true" className="h-3 w-3 shrink-0" />
                         </a>
 
                         <a
                           href={getGoogleCalendarUrl(notice)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                          aria-label={`Add ${notice.title} to Google Calendar (opens in new tab)`}
+                          className="inline-flex items-center gap-1 py-0.5 text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
                         >
-                          <CalendarPlus className="h-3 w-3 shrink-0 text-slate-400" />
+                          <CalendarPlus
+                            aria-hidden="true"
+                            className="h-3 w-3 shrink-0 text-slate-500 dark:text-slate-400"
+                          />
                           <span>Google Calendar</span>
                         </a>
 
                         <button
                           type="button"
+                          aria-label={`Download .ics calendar event for ${notice.title}`}
                           onClick={() => {
                             downloadNoticeIcs(notice);
                             showToast('Saved proclamation to calendar (.ics)');
                           }}
-                          className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                          className="inline-flex items-center gap-1 py-0.5 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
                         >
-                          <Download className="h-3 w-3 shrink-0" />
+                          <Download aria-hidden="true" className="h-3 w-3 shrink-0" />
                           <span>.ics</span>
                         </button>
                       </div>
 
                       <button
                         type="button"
+                        aria-expanded={isExpanded}
+                        aria-controls={fullTextId}
+                        aria-label={`${isExpanded ? 'Hide full text' : 'Show full text'} for ${notice.title}`}
                         onClick={() => setExpandedHistoryId(isExpanded ? null : notice.id)}
-                        className="shrink-0 font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                        className="shrink-0 py-0.5 font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
                       >
                         {isExpanded ? 'Hide text' : 'Full text'}
                       </button>
@@ -655,11 +743,16 @@ export function App() {
 
               {/* Compact Data Source Status inside the drawer */}
               {payload?.sources && (
-                <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-3.5 sm:p-4 text-[11px] sm:text-xs text-slate-500 shadow-xs dark:border-slate-800/60 dark:bg-slate-900/30 dark:text-slate-400">
-                  <div className="mb-2 flex items-center justify-between gap-2 font-medium text-slate-700 dark:text-slate-300">
-                    <span className="whitespace-nowrap">Connected Live Feeds</span>
+                <section
+                  aria-labelledby="live-feeds-heading"
+                  className="rounded-2xl border border-slate-200/90 bg-white/85 p-3.5 sm:p-4 text-[11px] sm:text-xs text-slate-600 shadow-xs dark:border-slate-800/60 dark:bg-slate-900/30 dark:text-slate-400"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2 font-medium text-slate-800 dark:text-slate-200">
+                    <h2 id="live-feeds-heading" className="whitespace-nowrap text-[11px] sm:text-xs font-medium">
+                      Connected Live Feeds
+                    </h2>
                     {payload.fetchedAt && (
-                      <span className="shrink-0 whitespace-nowrap text-slate-400 dark:text-slate-500">
+                      <span className="shrink-0 whitespace-nowrap text-slate-600 dark:text-slate-400">
                         Updated{' '}
                         {new Date(payload.fetchedAt).toLocaleTimeString([], {
                           hour: '2-digit',
@@ -678,19 +771,21 @@ export function App() {
                           className="min-w-0 truncate hover:text-slate-900 hover:underline dark:hover:text-slate-200"
                         >
                           {src.name}
+                          <span className="sr-only"> (opens in new tab)</span>
                         </a>
                         <span
                           className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium ${
                             src.status === 'ok'
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-amber-600 dark:text-amber-400'
+                              ? 'text-emerald-700 dark:text-emerald-400'
+                              : 'text-amber-800 dark:text-amber-300'
                           }`}
                         >
                           <span
+                            aria-hidden="true"
                             className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                               src.status === 'ok'
-                                ? 'bg-emerald-500 dark:bg-emerald-400'
-                                : 'bg-amber-500 dark:bg-amber-400'
+                                ? 'bg-emerald-600 dark:bg-emerald-400'
+                                : 'bg-amber-600 dark:bg-amber-400'
                             }`}
                           />
                           <span>{src.status === 'ok' ? 'Live' : 'Fallback'}</span>
@@ -698,15 +793,15 @@ export function App() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </section>
               )}
-            </div>
+            </section>
           )}
         </div>
       </main>
 
-      {/* Whisper-quiet footer */}
-      <footer className="relative z-10 pb-4 text-center text-[11px] text-slate-400 dark:text-slate-600">
+      {/* Whisper-quiet footer with WCAG AA contrast */}
+      <footer className="relative z-10 pb-4 text-center text-[11px] text-slate-600 dark:text-slate-400">
         Real-time U.S. &amp; State Flag Status
       </footer>
     </div>

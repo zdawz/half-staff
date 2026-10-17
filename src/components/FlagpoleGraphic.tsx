@@ -47,6 +47,7 @@ export const FlagpoleGraphic: React.FC<FlagpoleGraphicProps> = ({
     >
       {/* Ambient radial glow behind the flagpole */}
       <div
+        aria-hidden="true"
         className={`absolute inset-2 rounded-full blur-2xl transition-colors duration-700 ${
           isHalfStaff
             ? 'bg-gradient-to-b from-amber-400/30 via-rose-400/15 to-transparent dark:from-amber-500/25 dark:via-rose-500/15'
@@ -56,6 +57,7 @@ export const FlagpoleGraphic: React.FC<FlagpoleGraphicProps> = ({
 
       {/* Circular framing ring (208x208px) */}
       <div
+        aria-hidden="true"
         className={`relative flex h-52 w-52 items-end justify-center overflow-hidden rounded-full border transition-colors duration-500 ${
           isHalfStaff
             ? 'border-amber-500/45 bg-gradient-to-b from-sky-100 via-sky-50 to-white shadow-[0_10px_35px_-10px_rgba(245,158,11,0.3)] dark:border-amber-500/35 dark:from-slate-900/95 dark:via-slate-900/90 dark:to-slate-900/90 dark:shadow-[0_0_40px_-10px_rgba(245,158,11,0.3)]'
@@ -78,11 +80,13 @@ export const FlagpoleGraphic: React.FC<FlagpoleGraphicProps> = ({
 
           {/* Animated US Flag group */}
           <div
-            className="absolute left-[60px] z-20 transition-all duration-1000 ease-in-out"
+            className="absolute left-[60px] z-20 transition-all duration-1000 ease-in-out motion-reduce:transition-none"
             style={{ top: `${flagTopPx}px` }}
           >
             <div className="animate-flag-wave">
               <svg
+                aria-hidden="true"
+                focusable="false"
                 width="86"
                 height="45"
                 viewBox="0 0 88.8 46.8"
@@ -153,7 +157,14 @@ export const FlagpoleGraphic: React.FC<FlagpoleGraphicProps> = ({
           {isHalfStaff && (
             <div className="absolute left-[36px] top-[34px] flex flex-col items-center text-amber-600 dark:text-amber-400/80">
               <div className="h-10 w-[1.5px] bg-gradient-to-b from-amber-500/20 to-amber-600 dark:from-amber-400/20 dark:to-amber-400" />
-              <svg width="9" height="7" viewBox="0 0 10 8" className="-mt-0.5 fill-current">
+              <svg
+                aria-hidden="true"
+                focusable="false"
+                width="9"
+                height="7"
+                viewBox="0 0 10 8"
+                className="-mt-0.5 fill-current"
+              >
                 <path d="M5 8L0 0h10L5 8z" />
               </svg>
             </div>

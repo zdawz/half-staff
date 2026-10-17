@@ -9,6 +9,21 @@ body {
   padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* Consistent high-contrast keyboard focus ring across all interactive elements */
+a:focus-visible,
+button:focus-visible,
+select:focus-visible {
+  outline: 2px solid #d97706;
+  outline-offset: 2px;
+}
+
+.dark a:focus-visible,
+.dark button:focus-visible,
+.dark select:focus-visible {
+  outline: 2px solid #fbbf24;
+  outline-offset: 2px;
+}
+
 @keyframes waveSlow {
   0%, 100% {
     transform: perspective(300px) rotateY(-4deg) skewY(-1.5deg);
@@ -21,4 +36,20 @@ body {
 .animate-flag-wave {
   animation: waveSlow 4.5s ease-in-out infinite;
   transform-origin: left center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-flag-wave,
+  .animate-pulse,
+  .animate-spin {
+    animation: none !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
