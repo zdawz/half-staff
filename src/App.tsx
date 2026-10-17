@@ -256,7 +256,7 @@ export function App() {
       />
 
       {/* Minimal Top Bar */}
-      <header className="relative z-20 mx-auto flex w-full max-w-md items-center justify-between px-4 pt-4 pb-2">
+      <header className="relative z-20 mx-auto flex w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-3xl items-center justify-between px-4 sm:px-6 pt-4 pb-2">
         <div className="flex items-center gap-1.5">
           <div className="relative flex items-center">
             <MapPin className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
@@ -350,7 +350,7 @@ export function App() {
       )}
 
       {/* Main Focal Point: Simple At-A-Glance View */}
-      <main className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center px-5 py-6 text-center">
+      <main className="relative z-10 mx-auto flex w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-3xl flex-1 flex-col items-center justify-center px-5 sm:px-8 py-6 text-center">
         {/* Animated 50-Star, 13-Stripe Flagpole Icon */}
         <FlagpoleGraphic
           isHalfStaff={isHalfStaff}
@@ -364,7 +364,7 @@ export function App() {
             <div className="mx-auto h-4 w-64 rounded bg-slate-200/70 dark:bg-slate-800/70" />
           </div>
         ) : isHalfStaff && primaryNotice ? (
-          <div className="mt-3 w-full max-w-md">
+          <div className="mt-3 w-full max-w-2xl">
             {/* Simple Status Label */}
             <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-600 dark:bg-amber-400 animate-pulse" />
@@ -465,7 +465,7 @@ export function App() {
             )}
           </div>
         ) : (
-          <div className="mt-3 max-w-sm">
+          <div className="mt-3 w-full max-w-xl">
             {/* Full-Staff Status Label */}
             <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
