@@ -133,36 +133,58 @@ function decodeHtmlEntities(input: string): string {
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&nbsp;/g, ' ')
+    .replace(/\u00A0/g, ' ')
+    .replace(/[\u200B\uFEFF]/g, '')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>');
 }
 
 function stripHtml(html: string): string {
-  const withoutTags = html
+  const withoutChrome = html
+    .replace(/<div[^>]*wp-block-whitehouse-topper[\s\S]*?<\/nav>\s*<\/div>/gi, '')
+    .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+    .replace(/<form[\s\S]*?<\/form>/gi, '')
+    .replace(/<select[\s\S]*?<\/select>/gi, '')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, '')
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<p>\s*The post\s+[\s\S]*?appeared first on[\s\S]*?<\/p>/gi, '');
+
+  const decoded = decodeHtmlEntities(withoutChrome);
+
+  const withoutTags = decoded
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(?:p|div|h[1-6]|li|tr|section|article|blockquote)>/gi, '\n\n')
+    .replace(/<\/(?:p|div|h[1-6]|li|tr|section|article|blockquote|layout)>/gi, '\n\n')
     .replace(/<\/?(?:a|strong|b|em|i|span|u|small|sup|sub)\b[^>]*>/gi, '')
     .replace(/<[^>]+>/g, ' ');
 
-  return decodeHtmlEntities(withoutTags)
+  return withoutTags
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+/g, ' ')
     .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/(?<!https?:\/\/\S*),([A-Za-z])/g, ', $1')
+    .replace(/\bourNation\b/g, 'our Nation')
     .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
 function cleanProclamationFullText(rawHtmlOrText: string): string {
-  const stripped = stripHtml(rawHtmlOrText);
-  return stripped
+  let cleaned = stripHtml(rawHtmlOrText);
+
+  // If the text contains the official presidential header, strip any residual site chrome before it
+  const presHeaderIdx = cleaned.indexOf('BY THE PRESIDENT OF THE UNITED STATES OF AMERICA');
+  if (presHeaderIdx > 0) {
+    cleaned = cleaned.slice(presHeaderIdx);
+  }
+
+  return cleaned
     .replace(/\*\s*/g, '')
     .replace(/\n*###[\s\S]*$/i, '')
     .replace(/\n*Stay Updated with the Office of Governor[\s\S]*$/i, '')
     .replace(/\n*SUBSCRIBER SERVICES[\s\S]*$/i, '')
-    .replace(/\n*The post\s+[\s\S]*?appeared first on\s+The White House\s*\.?$/i, '')
+    .replace(/\n*The post\s+[\s\S]*?appeared first on\s+The White House[\s\S]*$/i, '')
     .trim();
 }
 
@@ -229,6 +251,7 @@ function extractOfficialSource(
 function isMetadataLine(line: string): boolean {
   const t = line.trim();
   if (t.length < 35) return true;
+  if (/^https?:\/\/\S+$/i.test(t)) return true;
   if (/^FOR IMMEDIATE RELEASE/i.test(t)) return true;
   if (/^Contact:/i.test(t)) return true;
   if (/^Office of Governor/i.test(t)) return true;
@@ -248,6 +271,7 @@ function buildConciseSummary(
   const cleanContent = cleanProclamationFullText(rawContent)
     .replace(/Source:\s*https?:\/\/\S+/gi, '')
     .replace(/\(\s*https?:\/\/[^\s)]+\s*\)/gi, '')
+    .replace(/\[\s*https?:\/\/[^\s\]]+\s*\]/gi, '')
     .replace(/\s+([,.;:!?])/g, '$1')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
