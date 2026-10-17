@@ -993,8 +993,151 @@ async function fetchIowaDirectNotices(): Promise<{
   }
 }
 
+export interface LocationResult {
+  stateCode: string | null;
+  stateName: string | null;
+  source: 'coordinates' | 'cf-edge' | 'ip-lookup' | 'none';
+}
+
+function normalizeStateCodeCandidate(raw: string | null | undefined): string | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim().toUpperCase();
+  const isoMatch = trimmed.match(/^US-([A-Z]{2})$/);
+  const candidate = isoMatch ? isoMatch[1] : trimmed;
+  if (candidate.length === 2 && STATE_NAMES[candidate]) {
+    return candidate;
+  }
+  return null;
+}
+
+/**
+ * Resolves the user's U.S. state or territory code using:
+ * 1. Exact GPS coordinates (if provided via ?lat=...&lon=...)
+ * 2. Cloudflare Workers edge geolocation (request.cf.regionCode / country)
+ * 3. Server-side IP geolocation fallback (BigDataCloud & ipwho.is)
+ */
+export async function resolveUserLocation(options: {
+  lat?: number | null;
+  lon?: number | null;
+  cfRegionCode?: string | null;
+  cfCountry?: string | null;
+}): Promise<LocationResult> {
+  const { lat, lon, cfRegionCode, cfCountry } = options;
+
+  // 1. Reverse-geocode explicit GPS coordinates if provided
+  if (
+    typeof lat === 'number' &&
+    typeof lon === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lon >= -180 &&
+    lon <= 180
+  ) {
+    try {
+      const geoUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(
+        String(lat)
+      )}&longitude=${encodeURIComponent(String(lon))}&localityLanguage=en`;
+      const res = await safeFetchText(geoUrl, {
+        timeoutMs: 4000,
+        accept: 'application/json',
+        maxBytes: 100_000,
+      });
+      if (res.ok) {
+        const data = JSON.parse(res.text);
+        const code =
+          normalizeStateCodeCandidate(data?.principalSubdivisionCode) ||
+          normalizeStateCodeCandidate(data?.countryCode);
+        if (code) {
+          return {
+            stateCode: code,
+            stateName: STATE_NAMES[code] || code,
+            source: 'coordinates',
+          };
+        }
+      }
+    } catch {
+      // fall through to Cloudflare edge / IP lookup
+    }
+  }
+
+  // 2. Cloudflare native edge geolocation (0ms, immune to client blockers)
+  const edgeTerritoryCode = normalizeStateCodeCandidate(cfCountry);
+  if (edgeTerritoryCode) {
+    return {
+      stateCode: edgeTerritoryCode,
+      stateName: STATE_NAMES[edgeTerritoryCode] || edgeTerritoryCode,
+      source: 'cf-edge',
+    };
+  }
+
+  if (!cfCountry || cfCountry.toUpperCase() === 'US') {
+    const edgeRegionCode = normalizeStateCodeCandidate(cfRegionCode);
+    if (edgeRegionCode) {
+      return {
+        stateCode: edgeRegionCode,
+        stateName: STATE_NAMES[edgeRegionCode] || edgeRegionCode,
+        source: 'cf-edge',
+      };
+    }
+  }
+
+  // 3. Server-side IP geolocation fallback (for local dev or when edge regionCode is absent)
+  try {
+    const res = await safeFetchText(
+      'https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=en',
+      {
+        timeoutMs: 4000,
+        accept: 'application/json',
+        maxBytes: 100_000,
+      }
+    );
+    if (res.ok) {
+      const data = JSON.parse(res.text);
+      const code =
+        normalizeStateCodeCandidate(data?.principalSubdivisionCode) ||
+        normalizeStateCodeCandidate(data?.countryCode);
+      if (code) {
+        return {
+          stateCode: code,
+          stateName: STATE_NAMES[code] || code,
+          source: 'ip-lookup',
+        };
+      }
+    }
+  } catch {
+    // try secondary fallback
+  }
+
+  try {
+    const res = await safeFetchText('https://ipwho.is/', {
+      timeoutMs: 4000,
+      accept: 'application/json',
+      maxBytes: 100_000,
+    });
+    if (res.ok) {
+      const data = JSON.parse(res.text);
+      const code =
+        (data?.country_code === 'US' && normalizeStateCodeCandidate(data?.region_code)) ||
+        normalizeStateCodeCandidate(data?.country_code);
+      if (code) {
+        return {
+          stateCode: code,
+          stateName: STATE_NAMES[code] || code,
+          source: 'ip-lookup',
+        };
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return { stateCode: null, stateName: null, source: 'none' };
+}
+
 const CACHE_TTL_MS = 60_000;
-const MIN_FORCE_REFRESH_INTERVAL_MS = 15_000;
+const MIN_FORCE_REFRESH_INTERVAL_MS = 3_000;
 
 let cachedPayload: { data: FlagStatusPayload; fetchedAtMs: number; expiresAt: number } | null =
   null;
@@ -1008,9 +1151,12 @@ export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagSt
     if (!forceRefresh && cachedPayload.expiresAt > now) {
       return cachedPayload.data;
     }
-    // Rate-limit forced cache refreshes to prevent upstream amplification / DoS
+    // Rate-limit rapid forced cache refreshes (<3s) while updating fetchedAt timestamp
     if (forceRefresh && ageMs < MIN_FORCE_REFRESH_INTERVAL_MS) {
-      return cachedPayload.data;
+      return {
+        ...cachedPayload.data,
+        fetchedAt: new Date(now).toISOString(),
+      };
     }
   }
 

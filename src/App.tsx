@@ -125,15 +125,20 @@ export function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const lastNotifiedIdRef = useRef<string | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
     setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage((prev) => (prev === msg ? null : prev));
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMessage(null);
+      toastTimeoutRef.current = null;
     }, 3500);
-  };
+  }, []);
 
-  const handleStateChange = (code: string) => {
+  const handleStateChange = useCallback((code: string) => {
     const cleanCode = code.toUpperCase();
     if (!VALID_STATE_CODES.has(cleanCode)) return;
     setSelectedState(cleanCode);
@@ -143,22 +148,42 @@ export function App() {
     } catch {
       // ignore
     }
-  };
-
-  const fetchStatus = useCallback(async (force = false) => {
-    if (force) setRefreshing(true);
-    try {
-      const res = await fetch(`/api/flag-status${force ? '?refresh=1' : ''}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: FlagStatusPayload = await res.json();
-      setPayload(data);
-    } catch {
-      // keep previous payload if transient network issue
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
   }, []);
+
+  const fetchStatus = useCallback(
+    async (force = false) => {
+      const startMs = Date.now();
+      if (force) setRefreshing(true);
+      let ok = false;
+      try {
+        const endpoint = force
+          ? `/api/flag-status?refresh=1&t=${startMs}`
+          : '/api/flag-status';
+        const res = await fetch(endpoint, force ? { cache: 'no-store' } : undefined);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: FlagStatusPayload = await res.json();
+        setPayload(data);
+        ok = true;
+      } catch {
+        // keep previous payload if transient network issue
+      } finally {
+        if (force) {
+          const elapsed = Date.now() - startMs;
+          if (elapsed < 450) {
+            await new Promise((resolve) => setTimeout(resolve, 450 - elapsed));
+          }
+          setRefreshing(false);
+          showToast(
+            ok
+              ? 'Live flag status updated'
+              : 'Could not refresh live feeds — showing last known status'
+          );
+        }
+        setLoading(false);
+      }
+    },
+    [showToast]
+  );
 
   useEffect(() => {
     fetchStatus(false);
@@ -169,26 +194,133 @@ export function App() {
   }, [fetchStatus]);
 
   const detectUserState = async () => {
+    const startMs = Date.now();
     setLocating(true);
-    try {
-      const res = await fetch('https://api.bigdatacloud.net/data/reverse-geocode-client', {
-        credentials: 'omit',
-        signal: AbortSignal.timeout(5000),
+    let detectedCode: string | null = null;
+
+    const extractValidCode = (raw: unknown): string | null => {
+      if (typeof raw !== 'string') return null;
+      const trimmed = raw.trim().toUpperCase();
+      const isoMatch = trimmed.match(/^US-([A-Z]{2})$/);
+      const code = isoMatch ? isoMatch[1] : trimmed;
+      return VALID_STATE_CODES.has(code) ? code : null;
+    };
+
+    const getBrowserCoordinates = (timeoutMs: number): Promise<{ lat: number; lon: number } | null> => {
+      if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
+        return Promise.resolve(null);
+      }
+      return new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) =>
+            resolve({
+              lat: pos.coords.latitude,
+              lon: pos.coords.longitude,
+            }),
+          () => resolve(null),
+          {
+            enableHighAccuracy: false,
+            timeout: timeoutMs,
+            maximumAge: 300_000,
+          }
+        );
       });
-      if (res.ok) {
-        const geo = await res.json();
-        const subdivision: string =
-          typeof geo?.principalSubdivisionCode === 'string' ? geo.principalSubdivisionCode : '';
-        const match = subdivision.match(/^US-([A-Z]{2})$/);
-        if (match && match[1] && VALID_STATE_CODES.has(match[1])) {
-          handleStateChange(match[1]);
-          showToast(`Location set to ${match[1]}`);
+    };
+
+    try {
+      // 1. If browser geolocation permission is already granted, grab coordinates immediately
+      let coords: { lat: number; lon: number } | null = null;
+      let geoPermissionState: PermissionState | 'unknown' = 'unknown';
+      try {
+        if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
+          const perm = await navigator.permissions.query({ name: 'geolocation' });
+          geoPermissionState = perm.state;
+          if (perm.state === 'granted') {
+            coords = await getBrowserCoordinates(3000);
+          }
+        }
+      } catch {
+        // ignore permissions API errors on unsupported browsers
+      }
+
+      // 2. Query same-origin /api/locate (uses Cloudflare edge request.cf.regionCode + server IP fallback)
+      try {
+        const params = new URLSearchParams({ t: String(Date.now()) });
+        if (coords) {
+          params.set('lat', String(coords.lat));
+          params.set('lon', String(coords.lon));
+        }
+        const res = await fetch(`/api/locate?${params.toString()}`, {
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          detectedCode = extractValidCode(data?.stateCode);
+        }
+      } catch {
+        // fall through to client-side lookup
+      }
+
+      // 3. Client-side BigDataCloud fallback if server lookup did not return a state
+      if (!detectedCode) {
+        try {
+          const geoUrl = coords
+            ? `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(
+                String(coords.lat)
+              )}&longitude=${encodeURIComponent(String(coords.lon))}&localityLanguage=en`
+            : 'https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=en';
+          const res = await fetch(geoUrl, {
+            credentials: 'omit',
+            cache: 'no-store',
+          });
+          if (res.ok) {
+            const geo = await res.json();
+            detectedCode =
+              extractValidCode(geo?.principalSubdivisionCode) ||
+              extractValidCode(geo?.countryCode);
+          }
+        } catch {
+          // fall through
         }
       }
-    } catch {
-      // ignore
+
+      // 4. Last-resort: if still unresolved and geolocation permission wasn't denied, prompt for device GPS
+      if (!detectedCode && !coords && geoPermissionState !== 'denied') {
+        const promptCoords = await getBrowserCoordinates(4000);
+        if (promptCoords) {
+          try {
+            const params = new URLSearchParams({
+              lat: String(promptCoords.lat),
+              lon: String(promptCoords.lon),
+              t: String(Date.now()),
+            });
+            const res = await fetch(`/api/locate?${params.toString()}`, {
+              cache: 'no-store',
+            });
+            if (res.ok) {
+              const data = await res.json();
+              detectedCode = extractValidCode(data?.stateCode);
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
     } finally {
+      const elapsed = Date.now() - startMs;
+      if (elapsed < 450) {
+        await new Promise((resolve) => setTimeout(resolve, 450 - elapsed));
+      }
       setLocating(false);
+
+      if (detectedCode) {
+        const stateObj = US_STATES.find((s) => s.code === detectedCode);
+        const stateLabel = stateObj ? `${stateObj.name} (${detectedCode})` : detectedCode;
+        handleStateChange(detectedCode);
+        showToast(`Location set to ${stateLabel}`);
+      } else {
+        showToast('Could not auto-detect location — please select your state');
+      }
     }
   };
 
@@ -766,6 +898,7 @@ export function App() {
                         {new Date(payload.fetchedAt).toLocaleTimeString([], {
                           hour: '2-digit',
                           minute: '2-digit',
+                          second: '2-digit',
                         })}
                       </span>
                     )}

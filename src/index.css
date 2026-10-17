@@ -39,17 +39,7 @@ select:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-flag-wave,
-  .animate-pulse,
-  .animate-spin {
+  .animate-flag-wave {
     animation: none !important;
-  }
-
-  *,
-  *::before,
-  *::after {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
   }
 }

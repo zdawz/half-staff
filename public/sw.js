@@ -1,4 +1,4 @@
-const CACHE_NAME = 'half-staff-pwa-v2';
+const CACHE_NAME = 'half-staff-pwa-v3';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -39,15 +39,20 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
+  // Always bypass cache for real-time geolocation endpoint
+  if (url.pathname.startsWith('/api/locate')) {
+    return;
+  }
+
   // Network-first with cache fallback for live flag status API and HTML navigation
   if (url.pathname.startsWith('/api/flag-status') || request.mode === 'navigate') {
-    // Cache under the canonical endpoint path so ?refresh=1 updates the offline cache too
+    const isForceRefresh = url.searchParams.get('refresh') === '1';
     const cacheKey = url.pathname.startsWith('/api/flag-status')
       ? new Request(new URL('/api/flag-status', self.location.origin).toString())
       : request;
 
     event.respondWith(
-      fetch(request)
+      fetch(request, isForceRefresh ? { cache: 'no-store' } : undefined)
         .then((response) => {
           if (response.ok) {
             const clone = response.clone();

@@ -1,9 +1,15 @@
-import { getFlagStatusPayload } from './flagStatusCore';
+import { getFlagStatusPayload, resolveUserLocation } from './flagStatusCore';
 
 export interface Env {
   ASSETS?: {
     fetch: (request: Request) => Promise<Response>;
   };
+}
+
+interface CfProperties {
+  country?: string;
+  regionCode?: string;
+  region?: string;
 }
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -35,6 +41,46 @@ function withSecurityHeaders(response: Response): Response {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname.startsWith('/api/locate')) {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        return withSecurityHeaders(
+          new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+            status: 405,
+            headers: {
+              Allow: 'GET, HEAD',
+              'Content-Type': 'application/json; charset=utf-8',
+            },
+          })
+        );
+      }
+
+      const latParam = url.searchParams.get('lat');
+      const lonParam = url.searchParams.get('lon');
+      const lat = latParam !== null ? Number.parseFloat(latParam) : null;
+      const lon = lonParam !== null ? Number.parseFloat(lonParam) : null;
+
+      const cf = (request as Request & { cf?: CfProperties }).cf;
+      const cfRegionCode = cf?.regionCode || request.headers.get('cf-region-code');
+      const cfCountry = cf?.country || request.headers.get('cf-ipcountry');
+
+      const result = await resolveUserLocation({
+        lat,
+        lon,
+        cfRegionCode,
+        cfCountry,
+      });
+
+      return withSecurityHeaders(
+        new Response(request.method === 'HEAD' ? null : JSON.stringify(result), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store',
+          },
+        })
+      );
+    }
 
     if (url.pathname.startsWith('/api/flag-status')) {
       if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -84,7 +130,17 @@ export default {
 
     if (env.ASSETS) {
       const assetResponse = await env.ASSETS.fetch(request);
-      return withSecurityHeaders(assetResponse);
+      const secured = withSecurityHeaders(assetResponse);
+      if (url.pathname === '/sw.js' || url.pathname === '/' || url.pathname === '/index.html') {
+        const headers = new Headers(secured.headers);
+        headers.set('Cache-Control', 'no-cache');
+        return new Response(secured.body, {
+          status: secured.status,
+          statusText: secured.statusText,
+          headers,
+        });
+      }
+      return secured;
     }
 
     return withSecurityHeaders(new Response('Not Found', { status: 404 }));
