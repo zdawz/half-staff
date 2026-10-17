@@ -433,7 +433,7 @@ export function App() {
 
             {/* Subtle Secondary Actions: Date Range, Read Proclamation, Google Calendar & .ics */}
             <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1 whitespace-nowrap">
                 <Calendar className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
                 {formatDateRange(
                   primaryNotice.dateStart,
@@ -447,7 +447,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setShowHeroFullText((v) => !v)}
-                className="font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                className="font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
               >
                 {showHeroFullText ? 'Hide full text' : 'Full text'}
               </button>
@@ -458,7 +458,7 @@ export function App() {
                 href={getGoogleCalendarUrl(primaryNotice)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                className="inline-flex items-center gap-1 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
               >
                 <CalendarPlus className="h-3 w-3" />
                 <span>Google Calendar</span>
@@ -472,7 +472,7 @@ export function App() {
                   downloadNoticeIcs(primaryNotice);
                   showToast('Saved proclamation to calendar (.ics)');
                 }}
-                className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                className="inline-flex items-center gap-1 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
               >
                 <Download className="h-3 w-3" />
                 <span>.ics</span>
@@ -598,16 +598,17 @@ export function App() {
                       </div>
                     )}
 
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 pt-2.5 text-xs dark:border-slate-800/60">
-                      <div className="flex flex-wrap items-center gap-3">
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2.5 text-[11px] sm:text-xs whitespace-nowrap dark:border-slate-800/60">
+                      <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                         <a
                           href={notice.sourceUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 font-medium text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300"
                         >
-                          <span>{notice.sourceLabel}</span>
-                          <ExternalLink className="h-3 w-3" />
+                          <span className="sm:hidden">Source</span>
+                          <span className="hidden sm:inline">{notice.sourceLabel}</span>
+                          <ExternalLink className="h-3 w-3 shrink-0" />
                         </a>
 
                         <a
@@ -616,7 +617,7 @@ export function App() {
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
                         >
-                          <CalendarPlus className="h-3 w-3 text-slate-400" />
+                          <CalendarPlus className="h-3 w-3 shrink-0 text-slate-400" />
                           <span>Google Calendar</span>
                         </a>
 
@@ -628,7 +629,7 @@ export function App() {
                           }}
                           className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
                         >
-                          <Download className="h-3 w-3" />
+                          <Download className="h-3 w-3 shrink-0" />
                           <span>.ics</span>
                         </button>
                       </div>
@@ -636,9 +637,9 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setExpandedHistoryId(isExpanded ? null : notice.id)}
-                        className="text-[11px] font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                        className="shrink-0 font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
                       >
-                        {isExpanded ? 'Hide full text' : 'Full text'}
+                        {isExpanded ? 'Hide text' : 'Full text'}
                       </button>
                     </div>
                   </article>
