@@ -147,6 +147,35 @@ export function formatDateRange(dateStart: string, dateEnd: string | null, isOng
   return `${startFmt} – ${endFmt}`;
 }
 
+export function getGoogleCalendarUrl(notice: NormalizedNotice): string {
+  const startClean = notice.dateStart.replace(/-/g, '');
+  // For all-day Google Calendar events, end date is exclusive (day after dateEnd)
+  const endBase = notice.dateEnd
+    ? new Date(notice.dateEnd + 'T12:00:00Z')
+    : new Date(notice.dateStart + 'T12:00:00Z');
+  endBase.setUTCDate(endBase.getUTCDate() + 1);
+  const endClean = endBase.toISOString().slice(0, 10).replace(/-/g, '');
+
+  const scopePrefix =
+    notice.scope === 'federal'
+      ? 'U.S. Flag Half-Staff'
+      : `${notice.stateName || notice.stateCode || 'State'} Flag Half-Staff`;
+
+  const title = `${scopePrefix}: ${notice.title}`;
+  const details = `${notice.summary}\n\nOfficial Source: ${notice.sourceUrl}`;
+  const location = notice.scope === 'federal' ? 'United States' : notice.stateName || notice.stateCode || '';
+
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    dates: `${startClean}/${endClean}`,
+    details,
+    location,
+  });
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
 export function downloadNoticeIcs(notice: NormalizedNotice): void {
   const startClean = notice.dateStart.replace(/-/g, '');
   // For all-day ICS events, DTEND is exclusive (day after dateEnd)
