@@ -41,9 +41,32 @@ npm run build
 npm run preview
 ```
 
+## Deploying to Cloudflare Pages
+
+This project is pre-configured for **Cloudflare Pages + Pages Functions** via [`functions/api/flag-status.ts`](functions/api/flag-status.ts) and [`wrangler.toml`](wrangler.toml).
+
+### Option A: Connect GitHub Repository (Automatic Deployments)
+
+1. Go to the [Cloudflare Dashboard](https://dash.cloudflare.com/) &rarr; **Workers & Pages** &rarr; **Create** &rarr; **Pages** &rarr; **Connect to Git**.
+2. Select the `zdawz/half-staff` repository.
+3. Configure the build settings:
+   - **Framework preset**: `Vite`
+   - **Build command**: `npm run build`
+   - **Build output directory**: `dist`
+4. Click **Save and Deploy**. Cloudflare Pages will automatically build the static frontend (`dist/`) and deploy `functions/api/flag-status.ts` as an edge function at `/api/flag-status`.
+
+### Option B: Direct CLI Deploy via Wrangler
+
+```bash
+npm run build
+npx wrangler pages deploy dist --project-name half-staff
+```
+
 ## Project Structure
 
 - [`src/App.tsx`](src/App.tsx) — Main mobile-first UI, state selector, browser alerts, and progressive disclosure drawers.
 - [`src/components/FlagpoleGraphic.tsx`](src/components/FlagpoleGraphic.tsx) — Animated 50-star, 13-stripe SVG flag and flagpole component.
 - [`src/types.ts`](src/types.ts) — Shared TypeScript interfaces, date range helpers, and `.ics` calendar generator.
-- [`server/flagApiPlugin.ts`](server/flagApiPlugin.ts) — Server middleware that fetches, normalizes, deduplicates, and caches live federal and state half-staff proclamations.
+- [`server/flagStatusCore.ts`](server/flagStatusCore.ts) — Runtime-agnostic fetcher, parser, and deduplicator for live federal and state half-staff proclamations (works in both Node and Cloudflare Workers/Pages).
+- [`server/flagApiPlugin.ts`](server/flagApiPlugin.ts) — Local Vite dev/preview server middleware for `/api/flag-status`.
+- [`functions/api/flag-status.ts`](functions/api/flag-status.ts) — Cloudflare Pages Function serving `/api/flag-status` at the edge.
