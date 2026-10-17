@@ -4,12 +4,15 @@ import {
   RefreshCw,
   ExternalLink,
   Calendar,
+  CalendarPlus,
   ChevronDown,
   ChevronUp,
   Bell,
   BellRing,
   Download,
   Compass,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { FlagpoleGraphic } from './components/FlagpoleGraphic';
 import {
@@ -19,11 +22,13 @@ import {
   STATE_OFFICIAL_LINKS,
   isNoticeActiveOnDate,
   formatDateRange,
+  getGoogleCalendarUrl,
   downloadNoticeIcs,
 } from './types';
 
 const STORAGE_STATE_KEY = 'halfstaff_selected_state';
 const STORAGE_ALERT_KEY = 'halfstaff_alerts_enabled';
+const STORAGE_THEME_KEY = 'halfstaff_theme';
 
 export function App() {
   const [selectedState, setSelectedState] = useState<string>(() => {
@@ -42,6 +47,37 @@ export function App() {
     }
   });
 
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_THEME_KEY);
+      if (saved === 'light' || saved === 'dark') return saved;
+      if (typeof window !== 'undefined' && window.matchMedia) {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+    } catch {
+      // ignore
+    }
+    return 'dark';
+  });
+
+  useEffect(() => {
+    const isDark = theme === 'dark';
+    document.documentElement.classList.toggle('dark', isDark);
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', isDark ? '#0f172a' : '#f8fafc');
+    }
+    try {
+      localStorage.setItem(STORAGE_THEME_KEY, theme);
+    } catch {
+      // ignore
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   const [payload, setPayload] = useState<FlagStatusPayload | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -51,7 +87,6 @@ export function App() {
   const [showHeroFullText, setShowHeroFullText] = useState<boolean>(false);
   const [showMoreDrawer, setShowMoreDrawer] = useState<boolean>(false);
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
-  const [customDate, setCustomDate] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const lastNotifiedIdRef = useRef<string | null>(null);
@@ -142,7 +177,6 @@ export function App() {
       }
     }
 
-    // Fallback when running in embedded preview or browser without Notification prompt
     setAlertsEnabled(true);
     try {
       localStorage.setItem(STORAGE_ALERT_KEY, 'true');
@@ -156,10 +190,9 @@ export function App() {
     return US_STATES.find((s) => s.code === selectedState)?.name || selectedState;
   }, [selectedState]);
 
-  const effectiveDate = useMemo(() => {
-    if (customDate) return customDate;
+  const todayDate = useMemo(() => {
     return payload?.referenceDate || new Date().toISOString().slice(0, 10);
-  }, [customDate, payload]);
+  }, [payload]);
 
   const relevantNotices = useMemo(() => {
     if (!payload) return [];
@@ -169,8 +202,8 @@ export function App() {
   }, [payload, selectedState]);
 
   const activeNoticesForState = useMemo(() => {
-    return relevantNotices.filter((n) => isNoticeActiveOnDate(n, effectiveDate));
-  }, [relevantNotices, effectiveDate]);
+    return relevantNotices.filter((n) => isNoticeActiveOnDate(n, todayDate));
+  }, [relevantNotices, todayDate]);
 
   const recentNoticesForState = useMemo(() => {
     const activeIds = new Set(activeNoticesForState.map((n) => n.id));
@@ -212,13 +245,13 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between">
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col justify-between transition-colors duration-300">
       {/* Subtle ambient background glow */}
       <div
-        className={`pointer-events-none fixed inset-x-0 top-0 h-96 opacity-35 blur-3xl transition-colors duration-700 ${
+        className={`pointer-events-none fixed inset-x-0 top-0 h-96 opacity-40 dark:opacity-35 blur-3xl transition-colors duration-700 ${
           isHalfStaff
-            ? 'bg-gradient-to-b from-amber-600/25 via-rose-900/10 to-transparent'
-            : 'bg-gradient-to-b from-emerald-600/20 via-sky-900/10 to-transparent'
+            ? 'bg-gradient-to-b from-amber-300/35 via-rose-200/15 to-transparent dark:from-amber-600/25 dark:via-rose-900/10'
+            : 'bg-gradient-to-b from-emerald-300/30 via-sky-200/15 to-transparent dark:from-emerald-600/20 dark:via-sky-900/10'
         }`}
       />
 
@@ -226,20 +259,24 @@ export function App() {
       <header className="relative z-20 mx-auto flex w-full max-w-md items-center justify-between px-4 pt-4 pb-2">
         <div className="flex items-center gap-1.5">
           <div className="relative flex items-center">
-            <MapPin className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
+            <MapPin className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
             <select
               aria-label="Select State or Territory"
               value={selectedState}
               onChange={(e) => handleStateChange(e.target.value)}
-              className="h-8 appearance-none rounded-full border border-slate-800 bg-slate-900/80 pl-7 pr-6 text-xs font-medium text-slate-200 transition hover:border-slate-700 focus:border-slate-500 focus:outline-none"
+              className="h-8 appearance-none rounded-full border border-slate-200 bg-white/90 pl-7 pr-6 text-xs font-medium text-slate-800 shadow-xs transition hover:border-slate-300 focus:border-slate-400 focus:outline-none dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:focus:border-slate-500"
             >
               {US_STATES.map((st) => (
-                <option key={st.code} value={st.code} className="bg-slate-900 text-slate-100">
+                <option
+                  key={st.code}
+                  value={st.code}
+                  className="bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
+                >
                   {st.name}
                 </option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-2 h-3 w-3 text-slate-400" />
+            <ChevronDown className="pointer-events-none absolute right-2 h-3 w-3 text-slate-500 dark:text-slate-400" />
           </div>
 
           <button
@@ -248,9 +285,11 @@ export function App() {
             disabled={locating}
             title="Auto-detect my state"
             aria-label="Auto-detect my state"
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-800 bg-slate-900/80 text-slate-400 transition hover:border-slate-700 hover:text-slate-200 disabled:opacity-50"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
           >
-            <Compass className={`h-3.5 w-3.5 ${locating ? 'animate-spin text-amber-400' : ''}`} />
+            <Compass
+              className={`h-3.5 w-3.5 ${locating ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
+            />
           </button>
         </div>
 
@@ -260,14 +299,14 @@ export function App() {
             onClick={toggleAlerts}
             title={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
             aria-label={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
-            className={`flex h-8 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition ${
+            className={`flex h-8 items-center gap-1 rounded-full border px-2.5 text-xs font-medium shadow-xs transition ${
               alertsEnabled
-                ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                : 'border-slate-800 bg-slate-900/80 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                ? 'border-amber-500/50 bg-amber-500/15 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300'
+                : 'border-slate-200 bg-white/90 text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200'
             }`}
           >
             {alertsEnabled ? (
-              <BellRing className="h-3.5 w-3.5 text-amber-400" />
+              <BellRing className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
             ) : (
               <Bell className="h-3.5 w-3.5" />
             )}
@@ -276,50 +315,42 @@ export function App() {
 
           <button
             type="button"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
+          >
+            {theme === 'dark' ? (
+              <Sun className="h-3.5 w-3.5 text-amber-400" />
+            ) : (
+              <Moon className="h-3.5 w-3.5 text-slate-700" />
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => fetchStatus(true)}
             disabled={refreshing}
             title="Refresh live flag status"
             aria-label="Refresh live flag status"
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-800 bg-slate-900/80 text-slate-400 transition hover:border-slate-700 hover:text-slate-200 disabled:opacity-50"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin text-amber-400' : ''}`} />
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
+            />
           </button>
         </div>
       </header>
 
       {/* Optional Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-14 left-1/2 z-50 -translate-x-1/2 rounded-full border border-slate-700 bg-slate-900/95 px-4 py-1.5 text-xs font-medium text-slate-200 shadow-lg backdrop-blur">
+        <div className="fixed top-14 left-1/2 z-50 -translate-x-1/2 rounded-full border border-slate-300 bg-white/95 px-4 py-1.5 text-xs font-medium text-slate-800 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200">
           {toastMessage}
         </div>
       )}
 
       {/* Main Focal Point: Simple At-A-Glance View */}
       <main className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center px-5 py-6 text-center">
-        {/* Simulation date banner when previewing a historical/recent proclamation */}
-        {customDate && (
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3.5 py-1 text-xs text-amber-200">
-            <span>
-              Viewing{' '}
-              {new Date(customDate + 'T12:00:00').toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setCustomDate(null);
-                setShowHeroFullText(false);
-              }}
-              className="font-semibold text-amber-300 underline decoration-amber-400/60 underline-offset-2 hover:text-white"
-            >
-              Reset to Today
-            </button>
-          </div>
-        )}
-
         {/* Animated 50-Star, 13-Stripe Flagpole Icon */}
         <FlagpoleGraphic
           isHalfStaff={isHalfStaff}
@@ -328,15 +359,15 @@ export function App() {
         />
 
         {loading ? (
-          <div className="mt-4 w-full max-w-xs animate-pulse space-y-2.5">
-            <div className="mx-auto h-7 w-40 rounded-lg bg-slate-800" />
-            <div className="mx-auto h-4 w-64 rounded bg-slate-800/70" />
+          <div className="mt-4 w-full max-w-md animate-pulse space-y-2.5">
+            <div className="mx-auto h-7 w-40 rounded-lg bg-slate-200 dark:bg-slate-800" />
+            <div className="mx-auto h-4 w-64 rounded bg-slate-200/70 dark:bg-slate-800/70" />
           </div>
         ) : isHalfStaff && primaryNotice ? (
-          <div className="mt-3 max-w-sm">
+          <div className="mt-3 w-full max-w-md">
             {/* Simple Status Label */}
-            <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-amber-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+            <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-600 dark:bg-amber-400 animate-pulse" />
               <span>
                 Half-Staff &middot;{' '}
                 {primaryNotice.scope === 'federal'
@@ -346,18 +377,18 @@ export function App() {
             </div>
 
             {/* Headline */}
-            <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl md:text-4xl">
               {primaryNotice.title}
             </h1>
 
             {/* 1–2 Sentence Reason with Inline Source Links */}
-            <p className="mt-3 text-sm leading-relaxed text-slate-300 sm:text-[15px]">
+            <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300 sm:text-base break-words">
               {primaryNotice.summary}{' '}
               <a
                 href={primaryNotice.sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-0.5 font-medium text-amber-400 underline decoration-amber-400/40 underline-offset-4 transition hover:text-amber-300 hover:decoration-amber-300"
+                className="inline-flex items-center gap-0.5 font-medium text-amber-700 underline decoration-amber-600/40 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:text-amber-400 dark:decoration-amber-400/40 dark:hover:text-amber-300 dark:hover:decoration-amber-300"
               >
                 <span>{primaryNotice.sourceLabel}</span>
                 <ExternalLink className="ml-0.5 h-3 w-3" />
@@ -369,7 +400,7 @@ export function App() {
                     href={primaryNotice.secondaryUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-0.5 text-xs font-medium text-slate-400 underline decoration-slate-600 underline-offset-4 transition hover:text-slate-200"
+                    className="inline-flex items-center gap-0.5 text-xs font-medium text-slate-500 underline decoration-slate-400 underline-offset-4 transition hover:text-slate-800 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-slate-200"
                   >
                     <span>{primaryNotice.secondaryLabel}</span>
                     <ExternalLink className="ml-0.5 h-2.5 w-2.5" />
@@ -378,10 +409,10 @@ export function App() {
               )}
             </p>
 
-            {/* Subtle Secondary Actions: Date Range, Read Proclamation, Calendar (.ics) */}
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400">
+            {/* Subtle Secondary Actions: Date Range, Read Proclamation, Google Calendar & .ics */}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
               <span className="inline-flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5 text-slate-500" />
+                <Calendar className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
                 {formatDateRange(
                   primaryNotice.dateStart,
                   primaryNotice.dateEnd,
@@ -394,10 +425,22 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setShowHeroFullText((v) => !v)}
-                className="font-medium text-slate-300 hover:text-white"
+                className="font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
               >
-                {showHeroFullText ? 'Hide full text' : 'Read proclamation'}
+                {showHeroFullText ? 'Hide full text' : 'Full text'}
               </button>
+
+              <span>&middot;</span>
+
+              <a
+                href={getGoogleCalendarUrl(primaryNotice)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+              >
+                <CalendarPlus className="h-3 w-3" />
+                <span>Google Calendar</span>
+              </a>
 
               <span>&middot;</span>
 
@@ -407,42 +450,44 @@ export function App() {
                   downloadNoticeIcs(primaryNotice);
                   showToast('Saved proclamation to calendar (.ics)');
                 }}
-                className="inline-flex items-center gap-1 font-medium text-slate-300 hover:text-white"
+                className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
               >
                 <Download className="h-3 w-3" />
-                <span>Add to Calendar</span>
+                <span>.ics</span>
               </button>
             </div>
 
-            {/* Expandable Full Text Drawer (only when requested) */}
-            {showHeroFullText && primaryNotice.fullText && (
-              <div className="mt-4 rounded-2xl border border-slate-800/90 bg-slate-900/70 p-4 text-left text-xs leading-relaxed text-slate-300 whitespace-pre-line">
-                {primaryNotice.fullText}
+            {/* Expandable Full Text Drawer (never truncated or cut off) */}
+            {showHeroFullText && (
+              <div className="mt-4 w-full rounded-2xl border border-slate-200 bg-white/90 p-4 sm:p-5 text-left text-xs sm:text-sm leading-relaxed text-slate-700 shadow-xs whitespace-pre-wrap break-words dark:border-slate-800/90 dark:bg-slate-900/70 dark:text-slate-200">
+                {primaryNotice.fullText || primaryNotice.summary}
               </div>
             )}
           </div>
         ) : (
           <div className="mt-3 max-w-sm">
             {/* Full-Staff Status Label */}
-            <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
               <span>Full-Staff Today</span>
             </div>
 
-            <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl md:text-4xl">
               No Active Half-Staff Orders
             </h1>
 
             {/* Single Clean Sentence with Inline Source Links */}
-            <p className="mt-3 text-sm leading-relaxed text-slate-300 sm:text-[15px]">
+            <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300 sm:text-base">
               The American flag is flying at full-staff in{' '}
-              <span className="font-medium text-white">{selectedStateName}</span> and nationwide
-              today, with no active proclamations from the{' '}
+              <span className="font-semibold text-slate-900 dark:font-medium dark:text-white">
+                {selectedStateName}
+              </span>{' '}
+              and nationwide today, with no active proclamations from the{' '}
               <a
                 href="https://www.whitehouse.gov/presidential-actions/proclamations/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-slate-200 underline decoration-slate-600 underline-offset-4 transition hover:text-amber-300 hover:decoration-amber-400"
+                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-700 hover:decoration-amber-600 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
               >
                 White House
               </a>
@@ -451,7 +496,7 @@ export function App() {
                 href={statePortalLink.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-slate-200 underline decoration-slate-600 underline-offset-4 transition hover:text-amber-300 hover:decoration-amber-400"
+                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-700 hover:decoration-amber-600 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
               >
                 {statePortalLink.label}
               </a>
@@ -460,7 +505,7 @@ export function App() {
                 href={`https://halfstaff.org/state/${selectedState.toLowerCase()}/`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-slate-200 underline decoration-slate-600 underline-offset-4 transition hover:text-amber-300 hover:decoration-amber-400"
+                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-700 hover:decoration-amber-600 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
               >
                 HalfStaff.org
               </a>
@@ -474,7 +519,7 @@ export function App() {
           <button
             type="button"
             onClick={() => setShowMoreDrawer((v) => !v)}
-            className="mx-auto inline-flex items-center gap-1.5 rounded-full border border-slate-800/90 bg-slate-900/60 px-4 py-2 text-xs font-medium text-slate-300 transition hover:border-slate-700 hover:bg-slate-900 hover:text-white"
+            className="mx-auto inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-xs font-medium text-slate-700 shadow-xs transition hover:border-slate-300 hover:bg-white hover:text-slate-950 dark:border-slate-800/90 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900 dark:hover:text-white"
           >
             <span>
               {showMoreDrawer
@@ -482,9 +527,9 @@ export function App() {
                 : `Recent ${selectedStateName} & U.S. orders (${recentNoticesForState.length})`}
             </span>
             {showMoreDrawer ? (
-              <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
+              <ChevronUp className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
             ) : (
-              <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+              <ChevronDown className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
             )}
           </button>
 
@@ -496,68 +541,70 @@ export function App() {
                 return (
                   <article
                     key={notice.id}
-                    className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 transition hover:border-slate-700/80"
+                    className="rounded-2xl border border-slate-200/90 bg-white/90 p-4 sm:p-5 shadow-xs transition hover:border-slate-300 dark:border-slate-800/80 dark:bg-slate-900/60 dark:hover:border-slate-700/80"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                          <span
-                            className={`font-semibold uppercase tracking-wider ${
-                              notice.scope === 'federal' ? 'text-blue-400' : 'text-amber-400'
-                            }`}
-                          >
-                            {notice.scope === 'federal'
-                              ? 'Federal'
-                              : notice.stateName || notice.stateCode}
-                          </span>
-                          <span>&middot;</span>
-                          <span>
-                            {formatDateRange(notice.dateStart, notice.dateEnd, notice.isOngoing)}
-                          </span>
-                        </div>
-                        <h3 className="mt-1 text-sm font-semibold text-white">{notice.title}</h3>
+                    <div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                        <span
+                          className={`font-semibold uppercase tracking-wider ${
+                            notice.scope === 'federal'
+                              ? 'text-blue-600 dark:text-blue-400'
+                              : 'text-amber-700 dark:text-amber-400'
+                          }`}
+                        >
+                          {notice.scope === 'federal'
+                            ? 'Federal'
+                            : notice.stateName || notice.stateCode}
+                        </span>
+                        <span>&middot;</span>
+                        <span>
+                          {formatDateRange(notice.dateStart, notice.dateEnd, notice.isOngoing)}
+                        </span>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomDate(notice.dateStart);
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }}
-                        className="shrink-0 rounded-full border border-slate-700/80 bg-slate-800/60 px-2.5 py-1 text-[11px] font-medium text-slate-300 transition hover:border-amber-500/40 hover:text-amber-300"
-                      >
-                        Preview
-                      </button>
+                      <h3 className="mt-1 text-sm sm:text-base font-semibold text-slate-900 dark:text-white">
+                        {notice.title}
+                      </h3>
                     </div>
 
-                    <p className="mt-1.5 text-xs leading-relaxed text-slate-300">
-                      {notice.summary}
-                    </p>
-
-                    {isExpanded && notice.fullText && (
-                      <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs leading-relaxed text-slate-300 whitespace-pre-line">
-                        {notice.fullText}
+                    {!isExpanded ? (
+                      <p className="mt-1.5 text-xs sm:text-sm leading-relaxed text-slate-600 dark:text-slate-300 break-words">
+                        {notice.summary}
+                      </p>
+                    ) : (
+                      <div className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed text-slate-800 whitespace-pre-wrap break-words dark:border-slate-800 dark:bg-slate-950/80 dark:text-slate-200">
+                        {notice.fullText || notice.summary}
                       </div>
                     )}
 
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/60 pt-2.5 text-xs">
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 pt-2.5 text-xs dark:border-slate-800/60">
                       <div className="flex flex-wrap items-center gap-3">
                         <a
                           href={notice.sourceUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 font-medium text-amber-400 hover:text-amber-300"
+                          className="inline-flex items-center gap-1 font-medium text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300"
                         >
                           <span>{notice.sourceLabel}</span>
                           <ExternalLink className="h-3 w-3" />
                         </a>
+
+                        <a
+                          href={getGoogleCalendarUrl(notice)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                        >
+                          <CalendarPlus className="h-3 w-3 text-slate-400" />
+                          <span>Google Calendar</span>
+                        </a>
+
                         <button
                           type="button"
                           onClick={() => {
                             downloadNoticeIcs(notice);
                             showToast('Saved proclamation to calendar (.ics)');
                           }}
-                          className="inline-flex items-center gap-1 text-slate-400 hover:text-slate-200"
+                          className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
                         >
                           <Download className="h-3 w-3" />
                           <span>.ics</span>
@@ -567,9 +614,9 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setExpandedHistoryId(isExpanded ? null : notice.id)}
-                        className="text-[11px] font-medium text-slate-400 hover:text-slate-200"
+                        className="text-[11px] font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
                       >
-                        {isExpanded ? 'Hide text' : 'Full text'}
+                        {isExpanded ? 'Hide full text' : 'Full text'}
                       </button>
                     </div>
                   </article>
@@ -578,11 +625,11 @@ export function App() {
 
               {/* Compact Data Source Status inside the drawer */}
               {payload?.sources && (
-                <div className="rounded-2xl border border-slate-800/60 bg-slate-900/30 p-3.5 text-[11px] text-slate-400">
-                  <div className="mb-2 flex items-center justify-between font-medium text-slate-300">
+                <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-3.5 sm:p-4 text-[11px] sm:text-xs text-slate-500 shadow-xs dark:border-slate-800/60 dark:bg-slate-900/30 dark:text-slate-400">
+                  <div className="mb-2 flex items-center justify-between font-medium text-slate-700 dark:text-slate-300">
                     <span>Connected Live Feeds</span>
                     {payload.fetchedAt && (
-                      <span className="text-slate-500">
+                      <span className="text-slate-400 dark:text-slate-500">
                         Updated{' '}
                         {new Date(payload.fetchedAt).toLocaleTimeString([], {
                           hour: '2-digit',
@@ -598,13 +645,15 @@ export function App() {
                           href={src.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="hover:text-slate-200 hover:underline"
+                          className="hover:text-slate-900 hover:underline dark:hover:text-slate-200"
                         >
                           {src.name}
                         </a>
                         <span
                           className={
-                            src.status === 'ok' ? 'text-emerald-400' : 'text-amber-400'
+                            src.status === 'ok'
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-amber-600 dark:text-amber-400'
                           }
                         >
                           {src.status === 'ok' ? '● Live' : '● Fallback'}
@@ -620,7 +669,7 @@ export function App() {
       </main>
 
       {/* Whisper-quiet footer */}
-      <footer className="relative z-10 pb-4 text-center text-[11px] text-slate-600">
+      <footer className="relative z-10 pb-4 text-center text-[11px] text-slate-400 dark:text-slate-600">
         Real-time U.S. &amp; State Flag Status
       </footer>
     </div>

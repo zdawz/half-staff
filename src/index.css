@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @keyframes waveSlow {
   0%, 100% {
     transform: perspective(300px) rotateY(-4deg) skewY(-1.5deg);

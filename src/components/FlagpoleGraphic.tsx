@@ -49,8 +49,8 @@ export const FlagpoleGraphic: React.FC<FlagpoleGraphicProps> = ({
       <div
         className={`absolute inset-2 rounded-full blur-2xl transition-colors duration-700 ${
           isHalfStaff
-            ? 'bg-gradient-to-b from-amber-500/25 via-rose-500/15 to-transparent'
-            : 'bg-gradient-to-b from-emerald-500/20 via-sky-500/10 to-transparent'
+            ? 'bg-gradient-to-b from-amber-400/30 via-rose-400/15 to-transparent dark:from-amber-500/25 dark:via-rose-500/15'
+            : 'bg-gradient-to-b from-emerald-400/25 via-sky-400/15 to-transparent dark:from-emerald-500/20 dark:via-sky-500/10'
         }`}
       />
 
@@ -58,23 +58,23 @@ export const FlagpoleGraphic: React.FC<FlagpoleGraphicProps> = ({
       <div
         className={`relative flex h-52 w-52 items-end justify-center overflow-hidden rounded-full border transition-colors duration-500 ${
           isHalfStaff
-            ? 'border-amber-500/35 bg-slate-900/90 shadow-[0_0_40px_-10px_rgba(245,158,11,0.3)]'
-            : 'border-emerald-500/30 bg-slate-900/90 shadow-[0_0_40px_-10px_rgba(16,185,129,0.25)]'
+            ? 'border-amber-500/45 bg-gradient-to-b from-sky-100 via-sky-50 to-white shadow-[0_10px_35px_-10px_rgba(245,158,11,0.3)] dark:border-amber-500/35 dark:from-slate-900/95 dark:via-slate-900/90 dark:to-slate-900/90 dark:shadow-[0_0_40px_-10px_rgba(245,158,11,0.3)]'
+            : 'border-emerald-500/40 bg-gradient-to-b from-sky-100 via-sky-50 to-white shadow-[0_10px_35px_-10px_rgba(16,185,129,0.25)] dark:border-emerald-500/30 dark:from-slate-900/95 dark:via-slate-900/90 dark:to-slate-900/90 dark:shadow-[0_0_40px_-10px_rgba(16,185,129,0.25)]'
         }`}
       >
         {/* Subtle horizon fade at bottom */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-slate-950/90 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-slate-200/75 to-transparent dark:from-slate-950/90" />
 
         {/* Flagpole structure */}
         <div className="relative h-full w-full">
           {/* Finial (gold ball at top of pole) */}
-          <div className="absolute left-[52px] top-[19px] z-20 h-3 w-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-600 shadow-sm" />
+          <div className="absolute left-[52px] top-[19px] z-20 h-3 w-3 rounded-full bg-gradient-to-br from-amber-300 via-amber-500 to-amber-700 shadow-sm dark:from-amber-200 dark:via-amber-400 dark:to-amber-600" />
 
           {/* Main vertical pole */}
-          <div className="absolute bottom-0 left-[56px] top-[28px] z-10 w-[4px] rounded-t-sm bg-gradient-to-r from-slate-300 via-slate-100 to-slate-400 shadow" />
+          <div className="absolute bottom-0 left-[56px] top-[28px] z-10 w-[4px] rounded-t-sm bg-gradient-to-r from-slate-400 via-slate-200 to-slate-500 shadow dark:from-slate-300 dark:via-slate-100 dark:to-slate-400" />
 
           {/* Halyard rope */}
-          <div className="absolute bottom-4 left-[61px] top-[30px] z-0 w-[1px] bg-slate-400/45" />
+          <div className="absolute bottom-4 left-[61px] top-[30px] z-0 w-[1px] bg-slate-500/50 dark:bg-slate-400/45" />
 
           {/* Animated US Flag group */}
           <div
@@ -86,7 +86,7 @@ export const FlagpoleGraphic: React.FC<FlagpoleGraphicProps> = ({
                 width="86"
                 height="45"
                 viewBox="0 0 88.8 46.8"
-                className="drop-shadow-[0_6px_12px_rgba(0,0,0,0.55)]"
+                className="drop-shadow-[0_5px_10px_rgba(15,23,42,0.28)] dark:drop-shadow-[0_6px_12px_rgba(0,0,0,0.55)]"
               >
                 <defs>
                   <linearGradient id="flagShade" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -141,7 +141,7 @@ export const FlagpoleGraphic: React.FC<FlagpoleGraphicProps> = ({
               {/* Compact state indicator below US flag when a state order is active */}
               {isHalfStaff && stateCode && (scope === 'state' || scope === 'both') && (
                 <div className="mt-1 flex items-center">
-                  <div className="flex h-4 items-center rounded-r bg-sky-900/95 px-1.5 text-[9px] font-bold tracking-wider text-sky-100 shadow ring-1 ring-sky-400/40">
+                  <div className="flex h-4 items-center rounded-r bg-sky-800 px-1.5 text-[9px] font-bold tracking-wider text-white shadow ring-1 ring-sky-400/40 dark:bg-sky-900/95 dark:text-sky-100">
                     {stateCode} STATE
                   </div>
                 </div>
@@ -151,8 +151,8 @@ export const FlagpoleGraphic: React.FC<FlagpoleGraphicProps> = ({
 
           {/* Direction indicator arrow when half-staff */}
           {isHalfStaff && (
-            <div className="absolute left-[36px] top-[34px] flex flex-col items-center text-amber-400/80">
-              <div className="h-10 w-[1.5px] bg-gradient-to-b from-amber-400/20 to-amber-400" />
+            <div className="absolute left-[36px] top-[34px] flex flex-col items-center text-amber-600 dark:text-amber-400/80">
+              <div className="h-10 w-[1.5px] bg-gradient-to-b from-amber-500/20 to-amber-600 dark:from-amber-400/20 dark:to-amber-400" />
               <svg width="9" height="7" viewBox="0 0 10 8" className="-mt-0.5 fill-current">
                 <path d="M5 8L0 0h10L5 8z" />
               </svg>
