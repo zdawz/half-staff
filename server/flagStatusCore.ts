@@ -121,22 +121,40 @@ const STATE_PORTAL_URLS: Record<string, { label: string; url: string }> = {
 };
 
 function decodeHtmlEntities(input: string): string {
+  const namedEntities: Record<string, string> = {
+    '&rsquo;': '’',
+    '&lsquo;': '‘',
+    '&ldquo;': '“',
+    '&rdquo;': '”',
+    '&ndash;': '–',
+    '&mdash;': '—',
+    '&bull;': '•',
+    '&hellip;': '…',
+    '&apos;': "'",
+    '&quot;': '"',
+    '&amp;': '&',
+    '&nbsp;': ' ',
+    '&sect;': '§',
+    '&copy;': '©',
+    '&reg;': '®',
+    '&trade;': '™',
+    '&deg;': '°',
+    '&lt;': '<',
+    '&gt;': '>',
+  };
+
   return input
-    .replace(/&#8217;/g, "'")
-    .replace(/&#8216;/g, "'")
-    .replace(/&#8220;/g, '"')
-    .replace(/&#8221;/g, '"')
-    .replace(/&#8211;/g, '–')
-    .replace(/&#8212;/g, '—')
-    .replace(/&#038;/g, '&')
-    .replace(/&#58;/g, ':')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\u00A0/g, ' ')
-    .replace(/[\u200B\uFEFF]/g, '')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>');
+    .replace(/&#(\d+);/g, (_, dec) => {
+      const code = Number.parseInt(dec, 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : _;
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+      const code = Number.parseInt(hex, 16);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : _;
+    })
+    .replace(/&[a-zA-Z]+;/g, (entity) => namedEntities[entity.toLowerCase()] ?? entity)
+    .replace(/[\u00A0\u202F]/g, ' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '');
 }
 
 function stripHtml(html: string): string {
@@ -159,14 +177,54 @@ function stripHtml(html: string): string {
     .replace(/<[^>]+>/g, ' ');
 
   return withoutTags
+    .replace(/\*/g, '')
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+/g, ' ')
+    // Remove space before punctuation
     .replace(/\s+([,.;:!?])/g, '$1')
+    // Add missing space after commas outside URLs
     .replace(/(?<!https?:\/\/\S*),([A-Za-z])/g, ', $1')
+    // Add missing space after closing quote when followed immediately by a word or opening quote
+    .replace(/([.!?]["”’'])([A-Za-z"“‘])/g, '$1 $2')
+    // Add missing space after sentence punctuation before opening quote
+    .replace(/([a-z0-9][.!?])(["“‘][A-Z])/g, '$1 $2')
+    // Add missing space after period/exclamation/question mark before a capitalized word (outside URLs/initials)
+    .replace(/(?<!https?:\/\/\S*)(?<!\b[A-Z])([.!?])([A-Z][a-z])/g, '$1 $2')
+    // Add missing space before parenthetical years/ranges like Mondale(1977-1981)
+    .replace(/([a-z]{2,})\((\d)/g, '$1 ($2)')
+    // Add missing space after closing parenthesis before a letter
+    .replace(/\)([A-Za-z])/g, ') $1')
+    // Normalize cramped time strings like 6:00pm -> 6:00 p.m.
+    .replace(/\b(\d{1,2}:\d{2})\s*pm\b/gi, '$1 p.m.')
+    .replace(/\b(\d{1,2}:\d{2})\s*am\b/gi, '$1 a.m.')
+    // Fix known upstream typos / merged words
     .replace(/\bourNation\b/g, 'our Nation')
+    .replace(/\boflife\b/g, 'of life')
+    .replace(/\bPlaceat\b/g, 'Place at')
+    // Separate concatenated press release headers and datelines
+    .replace(/(OFFICE OF THE GOVERNOR)([A-Z])/g, '$1\n$2')
+    .replace(/([^\n])(FOR IMMEDIATE RELEASE:?)/gi, '$1\n$2')
+    .replace(/(For Immediate Release)([A-Z])/g, '$1\n$2')
+    .replace(
+      /([a-z0-9.!?])\s*([A-Z]{3,}(?:[\s,]+(?:[A-Z.]+|Wyo\.|Ky\.|S\.D\.|N\.D\.|Pa\.|Va\.|Mass\.|Conn\.|Fla\.|Ill\.|Ind\.|Minn\.|Miss\.|Mo\.|Mont\.|Neb\.|Nev\.|Okla\.|Ore\.|Tenn\.|Tex\.|Vt\.|Wash\.|Wis\.))*\s*(?:\([^)]+\)\s*)?[—–-])/g,
+      '$1\n\n$2'
+    )
+    .replace(/(\([A-Z][A-Za-z\s,.]+\))\s*[—–-]\s*([A-Z])/g, '$1 — $2')
+    .replace(/\b([A-Z]{2,}(?:\s+[A-Z]{2,})*)—\s*/g, '$1 — ')
     .replace(/\n[ \t]+/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function stripDatelinePrefix(text: string): string {
+  return text
+    .replace(/^20\d{2}-\d{2}-\d{2}\s+/, '')
+    .replace(/^[([][A-Z][A-Za-z\s.,]+[)\]]\s*[—–-]+\s*/, '')
+    .replace(
+      /^(?:[A-Z]{3,}(?:\s+[A-Z]{2,})*(?:,\s*(?:[A-Z.]+|Wyo\.|Ky\.|S\.D\.|N\.D\.|Pa\.|Va\.|Mass\.|Conn\.|Fla\.|Ill\.|Ind\.|Minn\.|Miss\.|Mo\.|Mont\.|Neb\.|Nev\.|Okla\.|Ore\.|Tenn\.|Tex\.|Vt\.|Wash\.|Wis\.|Ohio|Iowa|Idaho|Maine|Utah|Texas|Alaska|Hawaii))?|Madison|Frankfort|Indianapolis|Topeka|Cheyenne|Pierre|Santa Fe|Richmond|Des Moines|Columbus|Hartford|Boston|Austin|Lansing|Raleigh|Nashville|Atlanta|Tallahassee|Harrisburg|Sacramento|Olympia|Salem|Juneau|Honolulu|Boise|Helena|Bismarck|Lincoln|Oklahoma City|Baton Rouge|Jackson|Montgomery|Little Rock|Jefferson City|Charleston|Annapolis|Dover|Trenton|Albany|Montpelier|Concord|Augusta|Providence|Carson City|Phoenix|Salt Lake City|Denver|Springfield)(?:\s*\([^)]+\))?\s*(?:[—–]+|\s-\s*(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z.]*\s+\d{1,2},?\s+\d{4}\s*[—–-]+\s*)?)\s*/,
+      ''
+    )
     .trim();
 }
 
@@ -182,13 +240,154 @@ function cleanProclamationFullText(rawHtmlOrText: string): string {
     }
   }
 
-  return cleaned
-    .replace(/\*\s*/g, '')
-    .replace(/\n*###[\s\S]*$/i, '')
-    .replace(/\n*Stay Updated with the Office of Governor[\s\S]*$/i, '')
+  cleaned = cleaned
+    // Strip bracketed or parenthesized raw URLs
+    .replace(/\[\s*https?:\/\/[^\s\]]+\s*\]/gi, '')
+    .replace(/\(\s*https?:\/\/[^\s)]+\s*\)/gi, '')
+    // Strip press release end markers and everything following them
+    .replace(/\n*(?:#\s*#\s*#|###)[\s\S]*$/i, '')
+    .replace(/\n*Stay (?:Updated|Connected) with the Office of (?:the )?Governor[\s\S]*$/i, '')
     .replace(/\n*SUBSCRIBER SERVICES[\s\S]*$/i, '')
+    .replace(/\n*Manage Subscriptions[\s\S]*$/i, '')
+    .replace(/\n*This email was sent to[\s\S]*$/i, '')
     .replace(/\n*The post\s+[\s\S]*?appeared first on\s+The White House[\s\S]*$/i, '')
+    // Strip Massachusetts / Governor office administrative email sign-off blocks
+    .replace(/\n*Thank you,\s*\n+Alex Powell[\s\S]*$/i, '')
+    // Strip trailing Connecticut State Capitol mailing address block
+    .replace(/\n*State Capitol\s*\n+210 Capitol Avenue\s*\n+Hartford,\s*CT\s*06106[\s\S]*$/i, '')
+    // Strip dead anchor-text sentences left behind when HTML links are stripped
+    .replace(
+      /(?:A copy of the |The )?Governor['’]s proclamation can be found here\s*\./gi,
+      ''
+    )
+    .replace(/An online version of this release is available here\s*\./gi, '')
+    .replace(
+      /When posted the Presidential Proclamation can be found here,?\s*(?:see the Governor['’]s Status of the Flag here\.?)?/gi,
+      ''
+    )
+    .replace(/Flag status information is available at\s+[^\n]+/gi, '')
+    .replace(
+      /To receive email alerts anytime the governor orders flags to half[-‑]staff,?\s*visit\s+[^\n]+/gi,
+      ''
+    )
+    .replace(/\n*Read on CT\.gov[^\n]*/gi, '')
+    // Strip bare inline URLs and trailing Source references embedded inside paragraphs
+    .replace(/\bhttps?:\/\/\S+/gi, '')
+    .replace(/\s*(?:See\s+source\s+for\s+full\s+text\.?\s*)?\bSource:\s*[^\n]*/gi, '')
+    .replace(/\bSee\s+source\s+for\s+full\s+text\.?/gi, '')
+    // Strip leading ISO date on SC notices
+    .replace(/^20\d{2}-\d{2}-\d{2}\s+/gm, '')
+    // Fix punctuation spacing left after stripping bracketed URLs
+    .replace(/\s+([,.;:!?])/g, '$1')
+    // Join lines broken immediately after a colon (e.g. Illinois notices "in honor of:\n\nGovernor...")
+    .replace(/:\n+(?=[A-Z])/g, ': ')
+    // Add clean paragraph breaks before formal proclamation clauses when run together
+    .replace(/;\s*(?:and\s+)?(?=WHEREAS\b)/g, ';\n\n')
+    .replace(/[.;]\s*(?=NOW,\s*THEREFORE\b)/g, '.\n\n');
+
+  // Filter out line-level press-release metadata, newsletter headers, and Source lines
+  const lines = cleaned
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false;
+      if (/Unsubscribe\s*\|\s*Constant Contact Data Notice/i.test(line)) return false;
+      if (/^OFFICE OF THE GOVERNOR/i.test(line)) return false;
+      if (/★/.test(line) && /Governor/i.test(line)) return false;
+      if (/^FOR IMMEDIATE RELEASE:?$/i.test(line)) return false;
+      if (/^FOR IMMEDIATE RELEASE:/i.test(line) && line.length < 80) return false;
+      if (/^(?:MEDIA )?CONTACT:/i.test(line)) return false;
+      if (/^Source:\s*/i.test(line)) return false;
+      if (/^Official Document:\s*/i.test(line)) return false;
+      if (/^https?:\/\/\S+$/i.test(line)) return false;
+      if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(line)) return false;
+      if (/^\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}$/.test(line)) return false;
+      if (
+        /^Proclamations\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{1,2},\s+\d{4}$/i.test(
+          line
+        )
+      ) {
+        return false;
+      }
+      if (
+        /^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z.]*\s+\d{1,2}(?:st|nd|rd|th)?,?(?:\s+\d{4})?\s+through\s+(?:\(to be determined\)|sunset[^\n]*)\.?$/i.test(
+          line
+        )
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+  // Drop leading standalone date, contact name, or redundant press-release headline lines
+  while (lines.length > 1) {
+    const first = lines[0];
+    const isStandaloneDate =
+      /^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z.]*\s+\d{1,2},?\s+\d{4}$/i.test(
+        first
+      );
+    const isContactLine = /^Contact\b/i.test(first) && first.length < 60;
+    const isRedundantHeadline =
+      first.length < 130 &&
+      !/[.!?”"']$/.test(first) &&
+      !/^BY THE PRESIDENT/i.test(first) &&
+      !/^A PROCLAMATION/i.test(first) &&
+      !/^WHEREAS/i.test(first) &&
+      /orders?\s+flags|flags\s+(?:at|to|lowered|flown|fly)|flag\s+lowering|flag\s+order|in\s+honor\s+of|to\s+mourn|directs\s+flags|fallen\s+governor/i.test(
+        first
+      );
+
+    if (isStandaloneDate || isContactLine || isRedundantHeadline) {
+      lines.shift();
+    } else {
+      break;
+    }
+  }
+
+  if (lines.length > 0) {
+    lines[0] = stripDatelinePrefix(lines[0]);
+  }
+
+  return lines.join('\n\n').trim();
+}
+
+export function cleanNoticeTitle(rawTitle: string): string {
+  let title = decodeHtmlEntities(rawTitle || 'Half-Staff Notice')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*[—–-]\s*See Source for Full Text$/i, '')
     .trim();
+
+  title = title
+    .replace(
+      /^Presidential Order\s*[–—-]\s*Flags to Half[- ]Staff\s*(?:as a mark of respect for the memory of\s*|Honoring the Memory of\s*)?/i,
+      'Honoring '
+    )
+    .replace(
+      /^Executive Order #\d+\s*[–—-]\s*Flags to Half[- ]Staff\s*(?:in Honor of\s*)?/i,
+      'Honoring '
+    )
+    .replace(
+      /^(?:Fly the\s+)?(?:US|U\.S\.|United States)\s+Flags?\s+(?:Flown\s+|Fly\s+)?(?:to|at)\s+Half[- ]Staff(?:\s+for\s+Thirty\s+Days)?(?:\s+on\s+[A-Za-z]+,\s+[A-Za-z]+\s+\d{1,2},\s+\d{4})?\s*(?:[–—-]\s*)?/i,
+      ''
+    )
+    .replace(
+      /^Flags?\s+(?:Flown\s+|Fly\s+|Lowered\s+)?(?:to|at)\s+Half[- ]Staff(?:\s+at\s+State\s+Capitol)?(?:\s+on\s+[A-Za-z]+\s+\d{1,2},\s+\d{4},?)?\s*(?:[–—-]\s*)?/i,
+      ''
+    )
+    .replace(/^Half[- ]Staff\s*(?:[–—-]\s*)?/i, '')
+    .replace(/:\s*Flags?\s+(?:Lowered\s+to\s+|at\s+)?Half[- ]Staff.*$/i, '')
+    .replace(/^Honoring\s+in\s+Honor\s+of\s+/i, 'Honoring ')
+    .replace(/^Honoring\s+of\s+/i, 'Honoring ')
+    .replace(/^(?:in\s+Honor\s+of|for)\s+/i, 'Honoring ')
+    .replace(/^from\s+Until\s+Noon/i, 'Sunrise Until Noon')
+    .replace(/^from\s+Sunrise\s+Until\s+Noon/i, 'Sunrise Until Noon')
+    .trim();
+
+  if (title) {
+    title = title.charAt(0).toUpperCase() + title.slice(1);
+  }
+
+  return title || 'Half-Staff Notice';
 }
 
 /**
@@ -256,11 +455,12 @@ function isMetadataLine(line: string): boolean {
   if (t.length < 35) return true;
   if (/^https?:\/\/\S+$/i.test(t)) return true;
   if (/^FOR IMMEDIATE RELEASE/i.test(t)) return true;
-  if (/^Contact:/i.test(t)) return true;
-  if (/^Office of Governor/i.test(t)) return true;
+  if (/^(?:MEDIA )?CONTACT:/i.test(t)) return true;
+  if (/^Office of (?:the )?Governor/i.test(t)) return true;
   if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(t)) return true;
   if (/^\d{3}[-.]\d{3}[-.]\d{4}$/.test(t)) return true;
-  if (/^Governor\s+\w+\s+Orders\s+Flags/i.test(t) && !t.includes('.')) return true;
+  // Filter out headline/header lines that do not end with sentence punctuation
+  if (t.length < 140 && !/[.!?”"']$/.test(t)) return true;
   return false;
 }
 
@@ -271,26 +471,22 @@ function buildConciseSummary(
   stateCode: string | null,
   scope: 'federal' | 'state'
 ): string {
-  const cleanContent = cleanProclamationFullText(rawContent)
-    .replace(/Source:\s*https?:\/\/\S+/gi, '')
-    .replace(/\(\s*https?:\/\/[^\s)]+\s*\)/gi, '')
-    .replace(/\[\s*https?:\/\/[^\s\]]+\s*\]/gi, '')
-    .replace(/\s+([,.;:!?])/g, '$1')
-    .replace(/[ \t]{2,}/g, ' ')
-    .trim();
+  const cleanContent = cleanProclamationFullText(rawContent);
 
   const paragraphs = cleanContent
     .split(/\n+/)
-    .map((p) => p.replace(/^\[[^\]]+\]\s*[–-]\s*/, '').trim())
+    .map((p) => stripDatelinePrefix(p))
     .filter((p) => !isMetadataLine(p));
 
-  const candidate = (
-    paragraphs.find((p) => /half-staff|lowered|honor|proclaim/i.test(p)) ||
-    paragraphs[0] ||
-    cleanProclamationFullText(rawExcerpt)
-  ).trim();
+  const candidate = stripDatelinePrefix(
+    (
+      paragraphs.find((p) => /half[-‑]staff|lowered|honor|proclaim/i.test(p)) ||
+      paragraphs[0] ||
+      cleanProclamationFullText(rawExcerpt)
+    ).trim()
+  );
 
-  if (candidate && candidate.length <= 420) {
+  if (candidate && candidate.length <= 460) {
     return candidate;
   }
 
@@ -309,7 +505,7 @@ function buildConciseSummary(
   const firstOne = sentences[0] || '';
   const firstTwo = sentences.slice(0, 2).join(' ').trim();
 
-  if (firstTwo && firstTwo.length <= 420) {
+  if (firstTwo && firstTwo.length <= 460) {
     return firstTwo;
   }
   if (firstOne) {
@@ -320,11 +516,11 @@ function buildConciseSummary(
     scope === 'federal'
       ? 'nationwide'
       : `in ${(stateCode && STATE_NAMES[stateCode]) || stateCode || 'this state'}`;
-  return `Flags are ordered to half-staff ${targetName}: ${decodeHtmlEntities(title)}.`;
+  return `Flags are ordered to half-staff ${targetName}: ${title}.`;
 }
 
 function normalizeHalfStaffPost(post: RawHalfStaffPost): NormalizedNotice {
-  const cleanTitle = decodeHtmlEntities(post.title || 'Half-Staff Notice').trim();
+  const cleanTitle = cleanNoticeTitle(post.title || 'Half-Staff Notice');
   const stateCode =
     post.state && STATE_NAMES[post.state.toUpperCase()] ? post.state.toUpperCase() : null;
   const scope: 'federal' | 'state' =
@@ -353,7 +549,8 @@ function normalizeHalfStaffPost(post: RawHalfStaffPost): NormalizedNotice {
     stateCode,
     scope
   );
-  const fullText = cleanProclamationFullText(post.content || post.excerpt || '');
+  const cleanedFullText = cleanProclamationFullText(post.content || post.excerpt || '');
+  const fullText = cleanedFullText || summary;
 
   return {
     id: `hs-${post.id}`,
@@ -432,9 +629,7 @@ async function fetchWhiteHouseProclamations(): Promise<{
 
     for (const item of items) {
       if (!/half-staff/i.test(item)) continue;
-      const title = decodeHtmlEntities(
-        ((item.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || '').trim()
-      );
+      const title = cleanNoticeTitle(((item.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || '').trim());
       const link = ((item.match(/<link>([\s\S]*?)<\/link>/) || [])[1] || '').trim();
       const pubDateRaw = ((item.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1] || '').trim();
       const contentEncoded =
@@ -472,7 +667,7 @@ async function fetchWhiteHouseProclamations(): Promise<{
         id: `wh-${hashId(link || title)}`,
         title,
         summary: halfStaffPara,
-        fullText: plainBody,
+        fullText: plainBody || halfStaffPara,
         dateStart,
         dateEnd,
         isOngoing: false,
@@ -523,15 +718,13 @@ async function fetchWisconsinDirectNotices(): Promise<{
       const rawTitle = decodeHtmlEntities(p.title?.rendered || '').trim();
       if (!/half-staff/i.test(rawTitle)) continue;
 
-      const cleanTitle = rawTitle
-        .replace(/^Executive Order #\d+\s*[–-]\s*Flags to Half-Staff\s*/i, 'Honoring ')
-        .replace(/^Honoring in Honor of /i, 'Honoring ')
-        .replace(/^Honoring of /i, 'Honoring ');
-      const excerpt = cleanProclamationFullText(p.excerpt?.rendered || '');
+      const cleanTitle = cleanNoticeTitle(rawTitle);
+      const excerpt = cleanProclamationFullText(p.excerpt?.rendered || '').replace(/\.+$/, '');
       const bodyContent = cleanProclamationFullText(p.content?.rendered || '');
-      const fullText = bodyContent
-        ? `${rawTitle}\n\n${bodyContent}`
-        : `${rawTitle}\n\n${excerpt}`;
+      const summary = excerpt
+        ? `${rawTitle.replace(/\.+$/, '')}. ${excerpt}.`
+        : `${rawTitle.replace(/\.+$/, '')}.`;
+      const fullText = bodyContent ? `${rawTitle}\n\n${bodyContent}` : summary;
 
       let dateStart = (p.date || '').slice(0, 10);
       const dateMatch = excerpt.match(
@@ -549,7 +742,7 @@ async function fetchWisconsinDirectNotices(): Promise<{
       notices.push({
         id: `wi-${p.id}`,
         title: cleanTitle || rawTitle,
-        summary: excerpt ? `${rawTitle}. ${excerpt}.` : rawTitle,
+        summary,
         fullText,
         dateStart,
         dateEnd: dateStart,
@@ -589,29 +782,32 @@ async function fetchMarylandDirectNotices(): Promise<{
     const notices: NormalizedNotice[] = [];
     for (const r of rows) {
       const rawDate = r[1].trim();
-      const bodyText = cleanProclamationFullText(r[2]).replace(/^Flag Status Alert:\s*/i, '').trim();
+      const bodyText = cleanProclamationFullText(r[2])
+        .replace(/^Flag Status Alert:\s*/i, '')
+        .replace(
+          /^United States Flag and Maryland Flag (?:will be|are) at Half-Staff\s*\n*/i,
+          ''
+        )
+        .replace(/^Maryland Flag (?:will be|is) at Half-Staff\s*\n*/i, '')
+        .trim();
       const parsedDate = new Date(`${rawDate} 12:00:00 UTC`);
       if (isNaN(parsedDate.getTime())) continue;
       const dateIso = parsedDate.toISOString().slice(0, 10);
 
       const honorMatch = bodyText.match(
-        /for\s+(.+?)(?:,\s+who|\s+who\s+passed|\s+who\s+died|\.\s+This|\.\s+As|\.$)/i
+        /(?:in\s+honor\s+and\s+remembrance\s+of|in\s+honor\s+of|for)\s+((?:former\s+)?[A-Z][^.,;]+?)(?:,\s+who|\s+who\s+passed|\s+who\s+died|\.\s+This|\.\s+As|\.$)/i
       );
       const title = honorMatch
         ? `Honoring ${honorMatch[1].replace(/^former\s+/i, 'Former ').trim()}`
         : 'Maryland Flag Half-Staff Order';
 
-      const summary = bodyText
-        .replace(/^United States Flag and Maryland Flag (?:will be|are) at Half-Staff\s*/i, '')
-        .replace(/^Maryland Flag (?:will be|is) at Half-Staff\s*/i, '')
-        .replace(/\n+/g, ' ')
-        .trim();
+      const summary = bodyText.replace(/\n+/g, ' ').trim();
 
       notices.push({
         id: `md-${dateIso}`,
         title,
         summary,
-        fullText: bodyText,
+        fullText: bodyText || summary,
         dateStart: dateIso,
         dateEnd: dateIso,
         isOngoing: false,
@@ -670,13 +866,13 @@ async function fetchIowaDirectNotices(): Promise<{
 
       const honorMatch =
         rawTitle.match(/remembrance of\s+(.+)$/i) || rawTitle.match(/honor of\s+(.+)$/i);
-      const cleanTitle = honorMatch ? `Honoring ${honorMatch[1]}` : rawTitle;
+      const cleanTitle = honorMatch ? `Honoring ${honorMatch[1]}` : cleanNoticeTitle(rawTitle);
 
       notices.push({
         id: `ia-${dateStart}`,
         title: cleanTitle,
         summary: rawBody,
-        fullText: `${rawTitle}\n\n${rawBody}`,
+        fullText: rawBody || rawTitle,
         dateStart,
         dateEnd,
         isOngoing: false,
