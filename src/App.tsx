@@ -28,7 +28,7 @@ import {
 
 const STORAGE_STATE_KEY = 'halfstaff_selected_state';
 const STORAGE_ALERT_KEY = 'halfstaff_alerts_enabled';
-const STORAGE_THEME_KEY = 'halfstaff_theme';
+const STORAGE_THEME_KEY = 'halfstaff_theme_preference';
 
 export function App() {
   const [selectedState, setSelectedState] = useState<string>(() => {
@@ -49,6 +49,7 @@ export function App() {
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try {
+      localStorage.removeItem('halfstaff_theme');
       const saved = localStorage.getItem(STORAGE_THEME_KEY);
       if (saved === 'light' || saved === 'dark') return saved;
       if (typeof window !== 'undefined' && window.matchMedia) {
@@ -57,7 +58,7 @@ export function App() {
     } catch {
       // ignore
     }
-    return 'dark';
+    return 'light';
   });
 
   useEffect(() => {
@@ -67,15 +68,36 @@ export function App() {
     if (metaTheme) {
       metaTheme.setAttribute('content', isDark ? '#0f172a' : '#f8fafc');
     }
-    try {
-      localStorage.setItem(STORAGE_THEME_KEY, theme);
-    } catch {
-      // ignore
-    }
   }, [theme]);
 
+  // Follow device dark mode changes automatically unless the user explicitly toggled a preference
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent) => {
+      try {
+        const saved = localStorage.getItem(STORAGE_THEME_KEY);
+        if (saved !== 'light' && saved !== 'dark') {
+          setTheme(e.matches ? 'dark' : 'light');
+        }
+      } catch {
+        setTheme(e.matches ? 'dark' : 'light');
+      }
+    };
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
   const toggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem(STORAGE_THEME_KEY, next);
+      } catch {
+        // ignore
+      }
+      return next;
+    });
   };
 
   const [payload, setPayload] = useState<FlagStatusPayload | null>(null);
