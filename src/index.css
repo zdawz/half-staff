@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@keyframes waveSlow {
+  0%, 100% {
+    transform: perspective(300px) rotateY(-4deg) skewY(-1.5deg);
+  }
+  50% {
+    transform: perspective(300px) rotateY(4deg) skewY(1.5deg);
+  }
+}
+
+.animate-flag-wave {
+  animation: waveSlow 4.5s ease-in-out infinite;
+  transform-origin: left center;
+}

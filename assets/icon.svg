@@ -1,4 +1,51 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0d9488"/>
-  <text x="32" y="32" dy="0.35em" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, sans-serif" font-size="26" font-weight="600" fill="#ffffff">HS</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="pole" x1="16" y1="10" x2="20" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#94a3b8"/>
+    </linearGradient>
+    <clipPath id="flagClip">
+      <rect x="20" y="25" width="32" height="19.5" rx="2"/>
+    </clipPath>
+  </defs>
+
+  <!-- Rounded App Icon Background -->
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <rect x="1" y="1" width="62" height="62" rx="13" stroke="#f59e0b" stroke-opacity="0.35" stroke-width="1.5"/>
+
+  <!-- Half-Staff Indicator Arrow -->
+  <path d="M11 15V26M11 26L8.5 23.5M11 26L13.5 23.5" stroke="#f59e0b" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Flagpole & Gold Finial -->
+  <rect x="16.5" y="11" width="3" height="45" rx="1.5" fill="url(#pole)"/>
+  <circle cx="18" cy="9.5" r="2.8" fill="#fbbf24"/>
+
+  <!-- American Flag at Half-Staff -->
+  <g clip-path="url(#flagClip)">
+    <!-- White base -->
+    <rect x="20" y="25" width="32" height="19.5" fill="#f8fafc"/>
+    <!-- 7 Red Stripes (representing the 13 stripes) -->
+    <rect x="20" y="25" width="32" height="1.5" fill="#b22234"/>
+    <rect x="20" y="28" width="32" height="1.5" fill="#b22234"/>
+    <rect x="20" y="31" width="32" height="1.5" fill="#b22234"/>
+    <rect x="20" y="34" width="32" height="1.5" fill="#b22234"/>
+    <rect x="20" y="37" width="32" height="1.5" fill="#b22234"/>
+    <rect x="20" y="40" width="32" height="1.5" fill="#b22234"/>
+    <rect x="20" y="43" width="32" height="1.5" fill="#b22234"/>
+    <!-- Blue Union Canton -->
+    <rect x="20" y="25" width="14" height="10.5" fill="#1e3a8a"/>
+    <!-- Crisp Star Grid -->
+    <circle cx="23" cy="27.6" r="0.8" fill="#ffffff"/>
+    <circle cx="27" cy="27.6" r="0.8" fill="#ffffff"/>
+    <circle cx="31" cy="27.6" r="0.8" fill="#ffffff"/>
+    <circle cx="25" cy="30.2" r="0.8" fill="#ffffff"/>
+    <circle cx="29" cy="30.2" r="0.8" fill="#ffffff"/>
+    <circle cx="23" cy="32.8" r="0.8" fill="#ffffff"/>
+    <circle cx="27" cy="32.8" r="0.8" fill="#ffffff"/>
+    <circle cx="31" cy="32.8" r="0.8" fill="#ffffff"/>
+  </g>
 </svg>
