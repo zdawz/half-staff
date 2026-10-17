@@ -65,14 +65,6 @@ export const FlagpoleGraphic: React.FC<FlagpoleGraphicProps> = ({
         {/* Subtle horizon fade at bottom */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-slate-950/90 to-transparent" />
 
-        {/* Half-staff reference tick mark on the pole */}
-        <div
-          className="pointer-events-none absolute left-[45px] top-[86px] flex items-center gap-1 opacity-50"
-          title="Half-staff position"
-        >
-          <div className="h-[1px] w-2.5 bg-slate-400/60" />
-        </div>
-
         {/* Flagpole structure */}
         <div className="relative h-full w-full">
           {/* Finial (gold ball at top of pole) */}
