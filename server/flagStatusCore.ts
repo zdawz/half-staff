@@ -138,15 +138,32 @@ function decodeHtmlEntities(input: string): string {
 }
 
 function stripHtml(html: string): string {
-  return decodeHtmlEntities(
-    html
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n\n')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/[ \t]+/g, ' ')
-      .replace(/\n\s*\n/g, '\n\n')
-      .trim()
-  );
+  const withoutTags = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|h[1-6]|li|tr|section|article|blockquote)>/gi, '\n\n')
+    .replace(/<\/?(?:a|strong|b|em|i|span|u|small|sup|sub)\b[^>]*>/gi, '')
+    .replace(/<[^>]+>/g, ' ');
+
+  return decodeHtmlEntities(withoutTags)
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function cleanProclamationFullText(rawHtmlOrText: string): string {
+  const stripped = stripHtml(rawHtmlOrText);
+  return stripped
+    .replace(/\*\s*/g, '')
+    .replace(/\n*###[\s\S]*$/i, '')
+    .replace(/\n*Stay Updated with the Office of Governor[\s\S]*$/i, '')
+    .replace(/\n*SUBSCRIBER SERVICES[\s\S]*$/i, '')
+    .replace(/\n*The post\s+[\s\S]*?appeared first on\s+The White House\s*\.?$/i, '')
+    .trim();
 }
 
 /**
@@ -173,7 +190,7 @@ function extractOfficialSource(
     content.match(/Source:\s*<a[^>]+href=["']([^"']+)["']/i) ||
     content.match(/href=["'](https?:\/\/[^"']+(?:\.gov|govdelivery\.com)[^"']*)["']/i) ||
     content.match(/(https?:\/\/[^\s<"'\]]+(?:\.gov|govdelivery\.com)[^\s<"'\]]*)/i) ||
-    content.match(/Source:\s*(https?:\/\/[^\s<"'\]\)]+)/i);
+    content.match(/Source:\s*(https?:\/\/[^\s<"'\])]+)/i);
 
   if (sourceMatch && sourceMatch[1]) {
     const rawUrl = sourceMatch[1].replace(/[.,;\]]+$/, '');
@@ -209,6 +226,18 @@ function extractOfficialSource(
   return { url: null, label: null };
 }
 
+function isMetadataLine(line: string): boolean {
+  const t = line.trim();
+  if (t.length < 35) return true;
+  if (/^FOR IMMEDIATE RELEASE/i.test(t)) return true;
+  if (/^Contact:/i.test(t)) return true;
+  if (/^Office of Governor/i.test(t)) return true;
+  if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(t)) return true;
+  if (/^\d{3}[-.]\d{3}[-.]\d{4}$/.test(t)) return true;
+  if (/^Governor\s+\w+\s+Orders\s+Flags/i.test(t) && !t.includes('.')) return true;
+  return false;
+}
+
 function buildConciseSummary(
   title: string,
   rawContent: string,
@@ -216,31 +245,48 @@ function buildConciseSummary(
   stateCode: string | null,
   scope: 'federal' | 'state'
 ): string {
-  const cleanContent = stripHtml(rawContent)
+  const cleanContent = cleanProclamationFullText(rawContent)
     .replace(/Source:\s*https?:\/\/\S+/gi, '')
-    .replace(/\*\s*/g, '')
+    .replace(/\(\s*https?:\/\/[^\s)]+\s*\)/gi, '')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
     .trim();
 
   const paragraphs = cleanContent
     .split(/\n+/)
-    .map((p) => p.trim())
-    .filter(
-      (p) =>
-        p.length > 25 &&
-        !/^FOR IMMEDIATE RELEASE/i.test(p) &&
-        !/^Contact:/i.test(p) &&
-        !/^Office of Governor/i.test(p)
-    );
+    .map((p) => p.replace(/^\[[^\]]+\]\s*[–-]\s*/, '').trim())
+    .filter((p) => !isMetadataLine(p));
 
-  const candidate = paragraphs[0] || stripHtml(rawExcerpt);
-  const sentences = candidate.match(/[^.!?]+[.!?]+/g) || [candidate];
-  const concise = sentences.slice(0, 2).join(' ').trim();
+  const candidate = (
+    paragraphs.find((p) => /half-staff|lowered|honor|proclaim/i.test(p)) ||
+    paragraphs[0] ||
+    cleanProclamationFullText(rawExcerpt)
+  ).trim();
 
-  if (concise.length > 240) {
-    return concise.slice(0, 237).trim() + '...';
+  if (candidate && candidate.length <= 420) {
+    return candidate;
   }
-  if (concise) {
-    return concise;
+
+  // Protect common titles, initials, and abbreviations before splitting long paragraphs into sentences
+  const protectedCandidate = candidate
+    .replace(
+      /\b(Gov|Rep|Sen|Rev|Dr|Mr|Mrs|Ms|Jr|Sr|St|Ft|Mt|Lt|Gen|Col|Maj|Capt|Sgt|Cpl|Pfc|Spc|Hon|Dept|No|Jan|Feb|Mar|Apr|Aug|Sept|Oct|Nov|Dec|Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun)\.\s+/gi,
+      '$1.__DOT__'
+    )
+    .replace(/\b([A-Z])\.\s+/g, '$1.__DOT__')
+    .replace(/\b(U\.S|a\.m|p\.m)\.\s+/gi, '$1.__DOT__');
+
+  const rawSentences = protectedCandidate.split(/(?<=[.!?])\s+(?=[A-Z"“])/);
+  const sentences = rawSentences.map((s) => s.replace(/\.__DOT__/g, '. ').trim()).filter(Boolean);
+
+  const firstOne = sentences[0] || '';
+  const firstTwo = sentences.slice(0, 2).join(' ').trim();
+
+  if (firstTwo && firstTwo.length <= 420) {
+    return firstTwo;
+  }
+  if (firstOne) {
+    return firstOne;
   }
 
   const targetName =
@@ -280,7 +326,7 @@ function normalizeHalfStaffPost(post: RawHalfStaffPost): NormalizedNotice {
     stateCode,
     scope
   );
-  const fullText = stripHtml(post.content || post.excerpt || '');
+  const fullText = cleanProclamationFullText(post.content || post.excerpt || '');
 
   return {
     id: `hs-${post.id}`,
@@ -391,14 +437,14 @@ async function fetchWhiteHouseProclamations(): Promise<{
         dateEnd = `${year}-05-15`;
       }
 
-      const plainBody = stripHtml(contentEncoded || description);
+      const plainBody = cleanProclamationFullText(contentEncoded || description);
       const halfStaffPara =
-        plainBody.split(/\n+/).find((p) => /half-staff/i.test(p)) || plainBody.slice(0, 240);
+        plainBody.split(/\n+/).find((p) => /half-staff/i.test(p)) || plainBody;
 
       notices.push({
         id: `wh-${hashId(link || title)}`,
         title,
-        summary: halfStaffPara.length > 240 ? halfStaffPara.slice(0, 237) + '...' : halfStaffPara,
+        summary: halfStaffPara,
         fullText: plainBody,
         dateStart,
         dateEnd,
@@ -454,8 +500,11 @@ async function fetchWisconsinDirectNotices(): Promise<{
         .replace(/^Executive Order #\d+\s*[–-]\s*Flags to Half-Staff\s*/i, 'Honoring ')
         .replace(/^Honoring in Honor of /i, 'Honoring ')
         .replace(/^Honoring of /i, 'Honoring ');
-      const excerpt = stripHtml(p.excerpt?.rendered || '');
-      const fullText = stripHtml(p.content?.rendered || p.excerpt?.rendered || '');
+      const excerpt = cleanProclamationFullText(p.excerpt?.rendered || '');
+      const bodyContent = cleanProclamationFullText(p.content?.rendered || '');
+      const fullText = bodyContent
+        ? `${rawTitle}\n\n${bodyContent}`
+        : `${rawTitle}\n\n${excerpt}`;
 
       let dateStart = (p.date || '').slice(0, 10);
       const dateMatch = excerpt.match(
@@ -474,7 +523,7 @@ async function fetchWisconsinDirectNotices(): Promise<{
         id: `wi-${p.id}`,
         title: cleanTitle || rawTitle,
         summary: excerpt ? `${rawTitle}. ${excerpt}.` : rawTitle,
-        fullText: fullText || excerpt,
+        fullText,
         dateStart,
         dateEnd: dateStart,
         isOngoing: false,
@@ -513,7 +562,7 @@ async function fetchMarylandDirectNotices(): Promise<{
     const notices: NormalizedNotice[] = [];
     for (const r of rows) {
       const rawDate = r[1].trim();
-      const bodyText = stripHtml(r[2]).replace(/^Flag Status Alert:\s*/i, '').trim();
+      const bodyText = cleanProclamationFullText(r[2]).replace(/^Flag Status Alert:\s*/i, '').trim();
       const parsedDate = new Date(`${rawDate} 12:00:00 UTC`);
       if (isNaN(parsedDate.getTime())) continue;
       const dateIso = parsedDate.toISOString().slice(0, 10);
@@ -528,12 +577,13 @@ async function fetchMarylandDirectNotices(): Promise<{
       const summary = bodyText
         .replace(/^United States Flag and Maryland Flag (?:will be|are) at Half-Staff\s*/i, '')
         .replace(/^Maryland Flag (?:will be|is) at Half-Staff\s*/i, '')
+        .replace(/\n+/g, ' ')
         .trim();
 
       notices.push({
         id: `md-${dateIso}`,
         title,
-        summary: summary.length > 240 ? summary.slice(0, 237) + '...' : summary,
+        summary,
         fullText: bodyText,
         dateStart: dateIso,
         dateEnd: dateIso,
@@ -574,7 +624,7 @@ async function fetchIowaDirectNotices(): Promise<{
     for (const item of items) {
       const relUrl = item[1];
       const rawTitle = decodeHtmlEntities(item[2]).trim();
-      const rawBody = stripHtml(item[3]).trim();
+      const rawBody = cleanProclamationFullText(item[3]).trim();
       if (!/half-staff/i.test(rawTitle + ' ' + rawBody)) continue;
 
       const urlDateMatch = relUrl.match(/\/press-release\/(\d{4}-\d{2}-\d{2})\//);
