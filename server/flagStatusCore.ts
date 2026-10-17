@@ -173,10 +173,13 @@ function stripHtml(html: string): string {
 function cleanProclamationFullText(rawHtmlOrText: string): string {
   let cleaned = stripHtml(rawHtmlOrText);
 
-  // If the text contains the official presidential header, strip any residual site chrome before it
+  // If the text contains the official presidential header preceded by White House RSS navigation chrome, strip the chrome
   const presHeaderIdx = cleaned.indexOf('BY THE PRESIDENT OF THE UNITED STATES OF AMERICA');
   if (presHeaderIdx > 0) {
-    cleaned = cleaned.slice(presHeaderIdx);
+    const prefix = cleaned.slice(0, presHeaderIdx);
+    if (/Presidential Actions|Select Category|Nominations & Appointments/i.test(prefix)) {
+      cleaned = cleaned.slice(presHeaderIdx);
+    }
   }
 
   return cleaned
@@ -755,24 +758,24 @@ export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagSt
     latestDatasetDate,
     sources: [
       {
-        name: 'White House Presidential Proclamations (Live RSS)',
+        name: 'White House Presidential Proclamations',
         url: 'https://www.whitehouse.gov/presidential-actions/proclamations/',
         status: whResult.ok ? 'ok' : 'degraded',
         note: whResult.note,
       },
       {
-        name: 'HalfStaff.org (National & 50-State Aggregator)',
+        name: 'HalfStaff.org (50-State Aggregator)',
         url: 'https://halfstaff.org/',
         status: hsResult.ok ? 'ok' : 'degraded',
         note: hsResult.note,
       },
       {
-        name: 'Minnesota Governor Tim Walz — Flag Status & GovDelivery',
+        name: 'MN Governor Flag Status & GovDelivery',
         url: 'https://mn.gov/governor/newsroom/flag-status/',
         status: hsResult.ok ? 'ok' : 'degraded',
       },
       {
-        name: 'Direct State Portals (WI DMA, MD SOS, IA Governor)',
+        name: 'Direct State Portals (WI, MD, IA)',
         url: 'https://dma.wi.gov/flag-lowering-orders/',
         status: wiResult.ok || mdResult.ok || iaResult.ok ? 'ok' : 'degraded',
       },

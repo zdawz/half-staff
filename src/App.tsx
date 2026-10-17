@@ -278,15 +278,15 @@ export function App() {
       />
 
       {/* Minimal Top Bar */}
-      <header className="relative z-20 mx-auto flex w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-3xl items-center justify-between px-4 sm:px-6 pt-4 pb-2">
-        <div className="flex items-center gap-1.5">
-          <div className="relative flex items-center">
-            <MapPin className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+      <header className="relative z-20 mx-auto flex w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-3xl items-center justify-between gap-2 px-4 sm:px-6 pt-4 pb-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <div className="relative flex min-w-0 items-center">
+            <MapPin className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
             <select
               aria-label="Select State or Territory"
               value={selectedState}
               onChange={(e) => handleStateChange(e.target.value)}
-              className="h-8 appearance-none rounded-full border border-slate-200 bg-white/90 pl-7 pr-6 text-xs font-medium text-slate-800 shadow-xs transition hover:border-slate-300 focus:border-slate-400 focus:outline-none dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:focus:border-slate-500"
+              className="h-8 max-w-[165px] sm:max-w-none truncate appearance-none rounded-full border border-slate-200 bg-white/90 pl-7 pr-6 text-xs font-medium text-slate-800 shadow-xs transition hover:border-slate-300 focus:border-slate-400 focus:outline-none dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:focus:border-slate-500"
             >
               {US_STATES.map((st) => (
                 <option
@@ -298,7 +298,7 @@ export function App() {
                 </option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-2 h-3 w-3 text-slate-500 dark:text-slate-400" />
+            <ChevronDown className="pointer-events-none absolute right-2 h-3 w-3 shrink-0 text-slate-500 dark:text-slate-400" />
           </div>
 
           <button
@@ -307,30 +307,30 @@ export function App() {
             disabled={locating}
             title="Auto-detect my state"
             aria-label="Auto-detect my state"
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
           >
             <Compass
-              className={`h-3.5 w-3.5 ${locating ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
+              className={`h-3.5 w-3.5 shrink-0 ${locating ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
             />
           </button>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={toggleAlerts}
             title={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
             aria-label={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
-            className={`flex h-8 items-center gap-1 rounded-full border px-2.5 text-xs font-medium shadow-xs transition ${
+            className={`flex h-8 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap shadow-xs transition ${
               alertsEnabled
                 ? 'border-amber-500/50 bg-amber-500/15 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300'
                 : 'border-slate-200 bg-white/90 text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200'
             }`}
           >
             {alertsEnabled ? (
-              <BellRing className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+              <BellRing className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
             ) : (
-              <Bell className="h-3.5 w-3.5" />
+              <Bell className="h-3.5 w-3.5 shrink-0" />
             )}
             <span className="text-[11px]">{alertsEnabled ? 'Alerts On' : 'Alerts'}</span>
           </button>
@@ -340,12 +340,12 @@ export function App() {
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
           >
             {theme === 'dark' ? (
-              <Sun className="h-3.5 w-3.5 text-amber-400" />
+              <Sun className="h-3.5 w-3.5 shrink-0 text-amber-400" />
             ) : (
-              <Moon className="h-3.5 w-3.5 text-slate-700" />
+              <Moon className="h-3.5 w-3.5 shrink-0 text-slate-700" />
             )}
           </button>
 
@@ -355,10 +355,10 @@ export function App() {
             disabled={refreshing}
             title="Refresh live flag status"
             aria-label="Refresh live flag status"
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200"
           >
             <RefreshCw
-              className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
+              className={`h-3.5 w-3.5 shrink-0 ${refreshing ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
             />
           </button>
         </div>
@@ -366,7 +366,7 @@ export function App() {
 
       {/* Optional Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-14 left-1/2 z-50 -translate-x-1/2 rounded-full border border-slate-300 bg-white/95 px-4 py-1.5 text-xs font-medium text-slate-800 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200">
+        <div className="fixed top-14 left-1/2 z-50 max-w-[90vw] -translate-x-1/2 truncate rounded-full border border-slate-300 bg-white/95 px-4 py-1.5 text-xs font-medium whitespace-nowrap text-slate-800 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200">
           {toastMessage}
         </div>
       )}
@@ -388,8 +388,8 @@ export function App() {
         ) : isHalfStaff && primaryNotice ? (
           <div className="mt-3 w-full max-w-2xl">
             {/* Simple Status Label */}
-            <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-600 dark:bg-amber-400 animate-pulse" />
+            <div className="inline-flex flex-wrap items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-600 dark:bg-amber-400 animate-pulse" />
               <span>
                 Half-Staff &middot;{' '}
                 {primaryNotice.scope === 'federal'
@@ -410,10 +410,10 @@ export function App() {
                 href={primaryNotice.sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-0.5 font-medium text-amber-700 underline decoration-amber-600/40 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:text-amber-400 dark:decoration-amber-400/40 dark:hover:text-amber-300 dark:hover:decoration-amber-300"
+                className="inline-flex items-center gap-0.5 font-medium whitespace-nowrap text-amber-700 underline decoration-amber-600/40 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:text-amber-400 dark:decoration-amber-400/40 dark:hover:text-amber-300 dark:hover:decoration-amber-300"
               >
                 <span>{primaryNotice.sourceLabel}</span>
-                <ExternalLink className="ml-0.5 h-3 w-3" />
+                <ExternalLink className="ml-0.5 h-3 w-3 shrink-0" />
               </a>
               {primaryNotice.secondaryUrl && (
                 <>
@@ -422,10 +422,10 @@ export function App() {
                     href={primaryNotice.secondaryUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-0.5 text-xs font-medium text-slate-500 underline decoration-slate-400 underline-offset-4 transition hover:text-slate-800 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-slate-200"
+                    className="inline-flex items-center gap-0.5 text-xs font-medium whitespace-nowrap text-slate-500 underline decoration-slate-400 underline-offset-4 transition hover:text-slate-800 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-slate-200"
                   >
                     <span>{primaryNotice.secondaryLabel}</span>
-                    <ExternalLink className="ml-0.5 h-2.5 w-2.5" />
+                    <ExternalLink className="ml-0.5 h-2.5 w-2.5 shrink-0" />
                   </a>
                 </>
               )}
@@ -434,7 +434,7 @@ export function App() {
             {/* Subtle Secondary Actions: Date Range, Read Proclamation, Google Calendar & .ics */}
             <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
               <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                <Calendar className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+                <Calendar className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
                 {formatDateRange(
                   primaryNotice.dateStart,
                   primaryNotice.dateEnd,
@@ -460,7 +460,7 @@ export function App() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
               >
-                <CalendarPlus className="h-3 w-3" />
+                <CalendarPlus className="h-3 w-3 shrink-0" />
                 <span>Google Calendar</span>
               </a>
 
@@ -474,7 +474,7 @@ export function App() {
                 }}
                 className="inline-flex items-center gap-1 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
               >
-                <Download className="h-3 w-3" />
+                <Download className="h-3 w-3 shrink-0" />
                 <span>.ics</span>
               </button>
             </div>
@@ -490,7 +490,7 @@ export function App() {
           <div className="mt-3 w-full max-w-xl">
             {/* Full-Staff Status Label */}
             <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-600 dark:bg-emerald-400" />
               <span>Full-Staff Today</span>
             </div>
 
@@ -549,9 +549,9 @@ export function App() {
                 : `Recent ${selectedStateName} & U.S. orders (${recentNoticesForState.length})`}
             </span>
             {showMoreDrawer ? (
-              <ChevronUp className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+              <ChevronUp className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
             ) : (
-              <ChevronDown className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
             )}
           </button>
 
@@ -566,9 +566,9 @@ export function App() {
                     className="rounded-2xl border border-slate-200/90 bg-white/90 p-4 sm:p-5 shadow-xs transition hover:border-slate-300 dark:border-slate-800/80 dark:bg-slate-900/60 dark:hover:border-slate-700/80"
                   >
                     <div>
-                      <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                         <span
-                          className={`font-semibold uppercase tracking-wider ${
+                          className={`font-semibold uppercase tracking-wider whitespace-nowrap ${
                             notice.scope === 'federal'
                               ? 'text-blue-600 dark:text-blue-400'
                               : 'text-amber-700 dark:text-amber-400'
@@ -579,7 +579,7 @@ export function App() {
                             : notice.stateName || notice.stateCode}
                         </span>
                         <span>&middot;</span>
-                        <span>
+                        <span className="whitespace-nowrap">
                           {formatDateRange(notice.dateStart, notice.dateEnd, notice.isOngoing)}
                         </span>
                       </div>
@@ -649,10 +649,10 @@ export function App() {
               {/* Compact Data Source Status inside the drawer */}
               {payload?.sources && (
                 <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-3.5 sm:p-4 text-[11px] sm:text-xs text-slate-500 shadow-xs dark:border-slate-800/60 dark:bg-slate-900/30 dark:text-slate-400">
-                  <div className="mb-2 flex items-center justify-between font-medium text-slate-700 dark:text-slate-300">
-                    <span>Connected Live Feeds</span>
+                  <div className="mb-2 flex items-center justify-between gap-2 font-medium text-slate-700 dark:text-slate-300">
+                    <span className="whitespace-nowrap">Connected Live Feeds</span>
                     {payload.fetchedAt && (
-                      <span className="text-slate-400 dark:text-slate-500">
+                      <span className="shrink-0 whitespace-nowrap text-slate-400 dark:text-slate-500">
                         Updated{' '}
                         {new Date(payload.fetchedAt).toLocaleTimeString([], {
                           hour: '2-digit',
@@ -661,25 +661,32 @@ export function App() {
                       </span>
                     )}
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     {payload.sources.map((src) => (
-                      <div key={src.name} className="flex items-center justify-between">
+                      <div key={src.name} className="flex items-center justify-between gap-3">
                         <a
                           href={src.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="hover:text-slate-900 hover:underline dark:hover:text-slate-200"
+                          className="min-w-0 truncate hover:text-slate-900 hover:underline dark:hover:text-slate-200"
                         >
                           {src.name}
                         </a>
                         <span
-                          className={
+                          className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium ${
                             src.status === 'ok'
                               ? 'text-emerald-600 dark:text-emerald-400'
                               : 'text-amber-600 dark:text-amber-400'
-                          }
+                          }`}
                         >
-                          {src.status === 'ok' ? '● Live' : '● Fallback'}
+                          <span
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                              src.status === 'ok'
+                                ? 'bg-emerald-500 dark:bg-emerald-400'
+                                : 'bg-amber-500 dark:bg-amber-400'
+                            }`}
+                          />
+                          <span>{src.status === 'ok' ? 'Live' : 'Fallback'}</span>
                         </span>
                       </div>
                     ))}
