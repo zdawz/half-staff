@@ -39,9 +39,19 @@ export function App() {
     }
   });
 
+  const supportsNotifications =
+    typeof window !== 'undefined' &&
+    'Notification' in window &&
+    typeof window.Notification?.requestPermission === 'function';
+
   const [alertsEnabled, setAlertsEnabled] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(STORAGE_ALERT_KEY) === 'true';
+      return (
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        window.Notification?.permission === 'granted' &&
+        localStorage.getItem(STORAGE_ALERT_KEY) === 'true'
+      );
     } catch {
       return false;
     }
@@ -174,6 +184,8 @@ export function App() {
   };
 
   const toggleAlerts = async () => {
+    if (!supportsNotifications) return;
+
     if (alertsEnabled) {
       setAlertsEnabled(false);
       try {
@@ -185,27 +197,20 @@ export function App() {
       return;
     }
 
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      try {
-        const perm = await Notification.requestPermission();
-        if (perm === 'granted') {
-          setAlertsEnabled(true);
-          localStorage.setItem(STORAGE_ALERT_KEY, 'true');
-          showToast(`Alerts enabled for ${selectedStateName} & U.S. orders`);
-          return;
-        }
-      } catch {
-        // fallback below
-      }
-    }
-
-    setAlertsEnabled(true);
     try {
-      localStorage.setItem(STORAGE_ALERT_KEY, 'true');
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        setAlertsEnabled(true);
+        localStorage.setItem(STORAGE_ALERT_KEY, 'true');
+        showToast(`Alerts enabled for ${selectedStateName} & U.S. orders`);
+      } else {
+        setAlertsEnabled(false);
+        localStorage.setItem(STORAGE_ALERT_KEY, 'false');
+        showToast('Notifications blocked in browser settings');
+      }
     } catch {
-      // ignore
+      showToast('Notifications unavailable on this browser');
     }
-    showToast(`Live half-staff alerts enabled for ${selectedStateName}`);
   };
 
   const selectedStateName = useMemo(() => {
@@ -237,11 +242,11 @@ export function App() {
 
   // Trigger browser notification if alerts are enabled and an active half-staff notice is present
   useEffect(() => {
-    if (!alertsEnabled || !primaryNotice) return;
+    if (!alertsEnabled || !primaryNotice || !supportsNotifications) return;
     if (lastNotifiedIdRef.current === primaryNotice.id) return;
     lastNotifiedIdRef.current = primaryNotice.id;
 
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+    if (Notification.permission === 'granted') {
       try {
         new Notification(`Half-Staff Active: ${primaryNotice.title}`, {
           body: primaryNotice.summary,
@@ -251,7 +256,7 @@ export function App() {
         // ignore
       }
     }
-  }, [alertsEnabled, primaryNotice]);
+  }, [alertsEnabled, primaryNotice, supportsNotifications]);
 
   const activeScope = useMemo<'federal' | 'state' | 'both' | 'none'>(() => {
     if (!isHalfStaff) return 'none';
@@ -286,7 +291,7 @@ export function App() {
               aria-label="Select State or Territory"
               value={selectedState}
               onChange={(e) => handleStateChange(e.target.value)}
-              className="h-8 max-w-[165px] sm:max-w-none truncate appearance-none rounded-full border border-slate-200 bg-white/90 pl-7 pr-6 text-xs font-medium text-slate-800 shadow-xs transition hover:border-slate-300 focus:border-slate-400 focus:outline-none dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:focus:border-slate-500"
+              className="h-8 max-w-[180px] sm:max-w-none truncate appearance-none rounded-full border border-slate-200 bg-white/90 pl-7 pr-6 text-xs font-medium text-slate-800 shadow-xs transition hover:border-slate-300 focus:border-slate-400 focus:outline-none dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:focus:border-slate-500"
             >
               {US_STATES.map((st) => (
                 <option
@@ -316,24 +321,26 @@ export function App() {
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={toggleAlerts}
-            title={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
-            aria-label={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
-            className={`flex h-8 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap shadow-xs transition ${
-              alertsEnabled
-                ? 'border-amber-500/50 bg-amber-500/15 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300'
-                : 'border-slate-200 bg-white/90 text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200'
-            }`}
-          >
-            {alertsEnabled ? (
-              <BellRing className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-            ) : (
-              <Bell className="h-3.5 w-3.5 shrink-0" />
-            )}
-            <span className="text-[11px]">{alertsEnabled ? 'Alerts On' : 'Alerts'}</span>
-          </button>
+          {supportsNotifications && (
+            <button
+              type="button"
+              onClick={toggleAlerts}
+              title={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
+              aria-label={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
+              className={`flex h-8 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap shadow-xs transition ${
+                alertsEnabled
+                  ? 'border-amber-500/50 bg-amber-500/15 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300'
+                  : 'border-slate-200 bg-white/90 text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-slate-200'
+              }`}
+            >
+              {alertsEnabled ? (
+                <BellRing className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              ) : (
+                <Bell className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <span className="text-[11px]">{alertsEnabled ? 'Alerts On' : 'Alerts'}</span>
+            </button>
+          )}
 
           <button
             type="button"
