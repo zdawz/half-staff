@@ -86,6 +86,8 @@ export const US_STATES: { code: string; name: string }[] = [
   { code: 'VI', name: 'U.S. Virgin Islands' },
 ];
 
+export const VALID_STATE_CODES = new Set(US_STATES.map((s) => s.code));
+
 export const STATE_OFFICIAL_LINKS: Record<string, { label: string; url: string }> = {
   MN: {
     label: 'MN Governor Flag Status',
@@ -104,6 +106,27 @@ export const STATE_OFFICIAL_LINKS: Record<string, { label: string; url: string }
     url: 'https://governor.iowa.gov/newsroom',
   },
 };
+
+/**
+ * Ensures any external URL rendered into an href or calendar file uses http: or https:.
+ */
+export function toSafeHttpUrl(
+  rawUrl: string | null | undefined,
+  fallback = 'https://halfstaff.org/'
+): string {
+  if (!rawUrl || typeof rawUrl !== 'string') return fallback;
+  try {
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return fallback;
+    }
+    parsed.username = '';
+    parsed.password = '';
+    return parsed.toString();
+  } catch {
+    return fallback;
+  }
+}
 
 export function isNoticeActiveOnDate(notice: NormalizedNotice, targetDateIso: string): boolean {
   if (!notice.dateStart) return false;
@@ -148,7 +171,7 @@ export function formatDateRange(dateStart: string, dateEnd: string | null, isOng
 }
 
 export function getGoogleCalendarUrl(notice: NormalizedNotice): string {
-  const startClean = notice.dateStart.replace(/-/g, '');
+  const startClean = notice.dateStart.replace(/[^0-9]/g, '').slice(0, 8);
   // For all-day Google Calendar events, end date is exclusive (day after dateEnd)
   const endBase = notice.dateEnd
     ? new Date(notice.dateEnd + 'T12:00:00Z')
@@ -161,8 +184,9 @@ export function getGoogleCalendarUrl(notice: NormalizedNotice): string {
       ? 'U.S. Flag Half-Staff'
       : `${notice.stateName || notice.stateCode || 'State'} Flag Half-Staff`;
 
+  const safeSourceUrl = toSafeHttpUrl(notice.sourceUrl);
   const title = `${scopePrefix}: ${notice.title}`;
-  const details = `${notice.summary}\n\nOfficial Source: ${notice.sourceUrl}`;
+  const details = `${notice.summary}\n\nOfficial Source: ${safeSourceUrl}`;
   const location = notice.scope === 'federal' ? 'United States' : notice.stateName || notice.stateCode || '';
 
   const params = new URLSearchParams({
@@ -177,7 +201,7 @@ export function getGoogleCalendarUrl(notice: NormalizedNotice): string {
 }
 
 export function downloadNoticeIcs(notice: NormalizedNotice): void {
-  const startClean = notice.dateStart.replace(/-/g, '');
+  const startClean = notice.dateStart.replace(/[^0-9]/g, '').slice(0, 8);
   // For all-day ICS events, DTEND is exclusive (day after dateEnd)
   const endBase = notice.dateEnd ? new Date(notice.dateEnd + 'T12:00:00Z') : new Date(notice.dateStart + 'T12:00:00Z');
   endBase.setUTCDate(endBase.getUTCDate() + 1);
@@ -190,9 +214,11 @@ export function downloadNoticeIcs(notice: NormalizedNotice): void {
       .replace(/,/g, '\\,')
       .replace(/\r?\n/g, '\\n');
 
+  const safeUid = notice.id.replace(/[^a-zA-Z0-9_-]/g, '');
+  const safeSourceUrl = toSafeHttpUrl(notice.sourceUrl).replace(/[\r\n]/g, '');
   const scopePrefix = notice.scope === 'federal' ? 'U.S. Flag Half-Staff' : `${notice.stateCode || 'State'} Flag Half-Staff`;
   const summary = escapeIcs(`${scopePrefix}: ${notice.title}`);
-  const description = escapeIcs(`${notice.summary}\n\nOfficial Source: ${notice.sourceUrl}`);
+  const description = escapeIcs(`${notice.summary}\n\nOfficial Source: ${safeSourceUrl}`);
 
   const icsLines = [
     'BEGIN:VCALENDAR',
@@ -200,22 +226,23 @@ export function downloadNoticeIcs(notice: NormalizedNotice): void {
     'PRODID:-//HalfStaffApp//EN',
     'CALSCALE:GREGORIAN',
     'BEGIN:VEVENT',
-    `UID:${notice.id}@halfstaff.local`,
+    `UID:${safeUid}@halfstaff.local`,
     `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}`,
     `DTSTART;VALUE=DATE:${startClean}`,
     `DTEND;VALUE=DATE:${endClean}`,
     `SUMMARY:${summary}`,
     `DESCRIPTION:${description}`,
-    `URL:${notice.sourceUrl}`,
+    `URL:${safeSourceUrl}`,
     'END:VEVENT',
     'END:VCALENDAR',
   ].join('\r\n');
 
+  const safeDateSlug = notice.dateStart.replace(/[^0-9-]/g, '').slice(0, 10) || 'event';
   const blob = new Blob([icsLines], { type: 'text/calendar;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `half-staff-${notice.dateStart}.ics`;
+  a.download = `half-staff-${safeDateSlug}.ics`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

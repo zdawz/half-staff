@@ -1,7 +1,8 @@
-const CACHE_NAME = 'half-staff-pwa-v1';
+const CACHE_NAME = 'half-staff-pwa-v2';
 const APP_SHELL = [
   '/',
   '/index.html',
+  '/theme-init.js',
   '/manifest.webmanifest',
   '/favicon.svg',
   '/apple-touch-icon.png',

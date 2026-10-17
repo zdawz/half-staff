@@ -19,7 +19,9 @@ import {
   type FlagStatusPayload,
   type NormalizedNotice,
   US_STATES,
+  VALID_STATE_CODES,
   STATE_OFFICIAL_LINKS,
+  toSafeHttpUrl,
   isNoticeActiveOnDate,
   formatDateRange,
   getGoogleCalendarUrl,
@@ -33,7 +35,8 @@ const STORAGE_THEME_KEY = 'halfstaff_theme_preference';
 export function App() {
   const [selectedState, setSelectedState] = useState<string>(() => {
     try {
-      return localStorage.getItem(STORAGE_STATE_KEY) || 'MN';
+      const saved = (localStorage.getItem(STORAGE_STATE_KEY) || '').toUpperCase();
+      return VALID_STATE_CODES.has(saved) ? saved : 'MN';
     } catch {
       return 'MN';
     }
@@ -131,10 +134,12 @@ export function App() {
   };
 
   const handleStateChange = (code: string) => {
-    setSelectedState(code);
+    const cleanCode = code.toUpperCase();
+    if (!VALID_STATE_CODES.has(cleanCode)) return;
+    setSelectedState(cleanCode);
     setShowHeroFullText(false);
     try {
-      localStorage.setItem(STORAGE_STATE_KEY, code);
+      localStorage.setItem(STORAGE_STATE_KEY, cleanCode);
     } catch {
       // ignore
     }
@@ -166,12 +171,16 @@ export function App() {
   const detectUserState = async () => {
     setLocating(true);
     try {
-      const res = await fetch('https://api.bigdatacloud.net/data/reverse-geocode-client');
+      const res = await fetch('https://api.bigdatacloud.net/data/reverse-geocode-client', {
+        credentials: 'omit',
+        signal: AbortSignal.timeout(5000),
+      });
       if (res.ok) {
         const geo = await res.json();
-        const subdivision: string = geo.principalSubdivisionCode || '';
+        const subdivision: string =
+          typeof geo?.principalSubdivisionCode === 'string' ? geo.principalSubdivisionCode : '';
         const match = subdivision.match(/^US-([A-Z]{2})$/);
-        if (match && match[1]) {
+        if (match && match[1] && VALID_STATE_CODES.has(match[1])) {
           handleStateChange(match[1]);
           showToast(`Location set to ${match[1]}`);
         }
@@ -455,7 +464,7 @@ export function App() {
             <p className="mt-3 text-sm leading-relaxed text-slate-700 dark:text-slate-300 sm:text-base break-words">
               {primaryNotice.summary}{' '}
               <a
-                href={primaryNotice.sourceUrl}
+                href={toSafeHttpUrl(primaryNotice.sourceUrl)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-0.5 font-medium whitespace-nowrap text-amber-800 underline decoration-amber-700/50 underline-offset-4 transition hover:text-amber-950 hover:decoration-amber-800 dark:text-amber-300 dark:decoration-amber-400/40 dark:hover:text-amber-200 dark:hover:decoration-amber-300"
@@ -468,7 +477,7 @@ export function App() {
                 <>
                   <span aria-hidden="true">{' · '}</span>
                   <a
-                    href={primaryNotice.secondaryUrl}
+                    href={toSafeHttpUrl(primaryNotice.secondaryUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-0.5 text-xs font-medium whitespace-nowrap text-slate-600 underline decoration-slate-400 underline-offset-4 transition hover:text-slate-900 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-slate-200"
@@ -579,7 +588,7 @@ export function App() {
               </a>
               ,{' '}
               <a
-                href={statePortalLink.url}
+                href={toSafeHttpUrl(statePortalLink.url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
@@ -687,7 +696,7 @@ export function App() {
                     <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2.5 text-[11px] sm:text-xs whitespace-nowrap dark:border-slate-800/60">
                       <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                         <a
-                          href={notice.sourceUrl}
+                          href={toSafeHttpUrl(notice.sourceUrl)}
                           target="_blank"
                           rel="noopener noreferrer"
                           aria-label={`${notice.sourceLabel} for ${notice.title} (opens in new tab)`}
@@ -765,7 +774,7 @@ export function App() {
                     {payload.sources.map((src) => (
                       <div key={src.name} className="flex items-center justify-between gap-3">
                         <a
-                          href={src.url}
+                          href={toSafeHttpUrl(src.url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="min-w-0 truncate hover:text-slate-900 hover:underline dark:hover:text-slate-200"
