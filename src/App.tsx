@@ -13,17 +13,27 @@ import {
   Compass,
   Sun,
   Moon,
+  FileText,
+  AlertTriangle,
+  Layers,
+  Clock,
 } from 'lucide-react';
 import { FlagpoleGraphic } from './components/FlagpoleGraphic';
 import {
   type FlagStatusPayload,
   type NormalizedNotice,
   US_STATES,
+  US_STATES_ONLY,
+  US_TERRITORIES_AND_DC,
   VALID_STATE_CODES,
   STATE_OFFICIAL_LINKS,
   toSafeHttpUrl,
   isNoticeActiveOnDate,
   formatDateRange,
+  getLocalDateIso,
+  formatDisplayDate,
+  formatRelativeTime,
+  getUpcomingFederalObservance,
   getGoogleCalendarUrl,
   downloadNoticeIcs,
 } from './types';
@@ -31,6 +41,57 @@ import {
 const STORAGE_STATE_KEY = 'halfstaff_selected_state';
 const STORAGE_ALERT_KEY = 'halfstaff_alerts_enabled';
 const STORAGE_THEME_KEY = 'halfstaff_theme_preference';
+const INITIAL_HISTORY_LIMIT = 8;
+
+function renderFormattedFullText(text: string) {
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (paragraphs.length === 0) return <p>{text}</p>;
+
+  return (
+    <div className="space-y-3">
+      {paragraphs.map((para, idx) => {
+        const isHeaderOrClause =
+          /^(?:BY THE PRESIDENT|A PROCLAMATION|EXECUTIVE ORDER)/i.test(para) ||
+          /^(?:WHEREAS|NOW,\s*THEREFORE|IN WITNESS WHEREOF)\b/i.test(para);
+
+        if (/^(?:BY THE PRESIDENT|A PROCLAMATION|EXECUTIVE ORDER)/i.test(para) && para.length < 120) {
+          return (
+            <p
+              key={idx}
+              className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100"
+            >
+              {para}
+            </p>
+          );
+        }
+
+        if (isHeaderOrClause) {
+          const match = para.match(/^(WHEREAS|NOW,\s*THEREFORE|IN WITNESS WHEREOF)(,?[\s\S]*)$/i);
+          if (match) {
+            return (
+              <p key={idx} className="leading-relaxed">
+                <span className="font-semibold tracking-wide text-amber-900 dark:text-amber-300">
+                  {match[1]}
+                </span>
+                {match[2]}
+              </p>
+            );
+          }
+        }
+
+        return (
+          <p key={idx} className="leading-relaxed">
+            {para}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
 
 export function App() {
   const [selectedState, setSelectedState] = useState<string>(() => {
@@ -115,12 +176,17 @@ export function App() {
 
   const [payload, setPayload] = useState<FlagStatusPayload | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [locating, setLocating] = useState<boolean>(false);
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
 
-  // Progressive disclosure states — everything collapsed by default for a clean first glance
+  // Progressive disclosure & multi-order states
+  const [activePrimaryIndex, setActivePrimaryIndex] = useState<number>(0);
   const [showHeroFullText, setShowHeroFullText] = useState<boolean>(false);
   const [showMoreDrawer, setShowMoreDrawer] = useState<boolean>(false);
+  const [drawerFilter, setDrawerFilter] = useState<'all' | 'state' | 'federal'>('all');
+  const [visibleHistoryCount, setVisibleHistoryCount] = useState<number>(INITIAL_HISTORY_LIMIT);
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -142,7 +208,9 @@ export function App() {
     const cleanCode = code.toUpperCase();
     if (!VALID_STATE_CODES.has(cleanCode)) return;
     setSelectedState(cleanCode);
+    setActivePrimaryIndex(0);
     setShowHeroFullText(false);
+    setVisibleHistoryCount(INITIAL_HISTORY_LIMIT);
     try {
       localStorage.setItem(STORAGE_STATE_KEY, cleanCode);
     } catch {
@@ -163,9 +231,11 @@ export function App() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: FlagStatusPayload = await res.json();
         setPayload(data);
+        setFetchError(false);
+        setNowTick(Date.now());
         ok = true;
       } catch {
-        // keep previous payload if transient network issue
+        setFetchError(true);
       } finally {
         if (force) {
           const elapsed = Date.now() - startMs;
@@ -189,6 +259,7 @@ export function App() {
     fetchStatus(false);
     const interval = setInterval(() => {
       fetchStatus(false);
+      setNowTick(Date.now());
     }, 60_000);
     return () => clearInterval(interval);
   }, [fetchStatus]);
@@ -228,7 +299,6 @@ export function App() {
     };
 
     try {
-      // 1. If browser geolocation permission is already granted, grab coordinates immediately
       let coords: { lat: number; lon: number } | null = null;
       let geoPermissionState: PermissionState | 'unknown' = 'unknown';
       try {
@@ -243,7 +313,6 @@ export function App() {
         // ignore permissions API errors on unsupported browsers
       }
 
-      // 2. Query same-origin /api/locate (uses Cloudflare edge request.cf.regionCode + server IP fallback)
       try {
         const params = new URLSearchParams({ t: String(Date.now()) });
         if (coords) {
@@ -261,7 +330,6 @@ export function App() {
         // fall through to client-side lookup
       }
 
-      // 3. Client-side BigDataCloud fallback if server lookup did not return a state
       if (!detectedCode) {
         try {
           const geoUrl = coords
@@ -284,7 +352,6 @@ export function App() {
         }
       }
 
-      // 4. Last-resort: if still unresolved and geolocation permission wasn't denied, prompt for device GPS
       if (!detectedCode && !coords && geoPermissionState !== 'denied') {
         const promptCoords = await getBrowserCoordinates(4000);
         if (promptCoords) {
@@ -358,9 +425,31 @@ export function App() {
     return US_STATES.find((s) => s.code === selectedState)?.name || selectedState;
   }, [selectedState]);
 
+  // Use local calendar date by default; only honor payload.referenceDate if it's an explicit non-today override
   const todayDate = useMemo(() => {
-    return payload?.referenceDate || new Date().toISOString().slice(0, 10);
-  }, [payload]);
+    const localIso = getLocalDateIso(new Date(nowTick));
+    const utcIso = new Date(nowTick).toISOString().slice(0, 10);
+    if (
+      payload?.referenceDate &&
+      payload.referenceDate !== utcIso &&
+      payload.referenceDate !== localIso
+    ) {
+      return payload.referenceDate;
+    }
+    return localIso;
+  }, [payload, nowTick]);
+
+  // Track which states currently have active state-level orders for the selector indicator
+  const activeStateCodes = useMemo(() => {
+    const set = new Set<string>();
+    if (!payload) return set;
+    for (const n of payload.notices) {
+      if (n.scope === 'state' && n.stateCode && isNoticeActiveOnDate(n, todayDate)) {
+        set.add(n.stateCode);
+      }
+    }
+    return set;
+  }, [payload, todayDate]);
 
   const relevantNotices = useMemo(() => {
     if (!payload) return [];
@@ -373,13 +462,63 @@ export function App() {
     return relevantNotices.filter((n) => isNoticeActiveOnDate(n, todayDate));
   }, [relevantNotices, todayDate]);
 
-  const recentNoticesForState = useMemo(() => {
+  const allHistoryNotices = useMemo(() => {
     const activeIds = new Set(activeNoticesForState.map((n) => n.id));
-    return relevantNotices.filter((n) => !activeIds.has(n.id)).slice(0, 8);
+    return relevantNotices.filter((n) => !activeIds.has(n.id));
   }, [relevantNotices, activeNoticesForState]);
 
-  const isHalfStaff = activeNoticesForState.length > 0;
-  const primaryNotice: NormalizedNotice | null = activeNoticesForState[0] || null;
+  const filteredHistoryNotices = useMemo(() => {
+    if (drawerFilter === 'state') {
+      return allHistoryNotices.filter((n) => n.scope === 'state');
+    }
+    if (drawerFilter === 'federal') {
+      return allHistoryNotices.filter((n) => n.scope === 'federal');
+    }
+    return allHistoryNotices;
+  }, [allHistoryNotices, drawerFilter]);
+
+  const recentNoticesForState = useMemo(() => {
+    return filteredHistoryNotices.slice(0, visibleHistoryCount);
+  }, [filteredHistoryNotices, visibleHistoryCount]);
+
+  const stateHistoryCount = useMemo(
+    () => allHistoryNotices.filter((n) => n.scope === 'state').length,
+    [allHistoryNotices]
+  );
+  const federalHistoryCount = useMemo(
+    () => allHistoryNotices.filter((n) => n.scope === 'federal').length,
+    [allHistoryNotices]
+  );
+
+  // Scheduled upcoming proclamation from the live feed (if a Governor/President announced one in advance)
+  const upcomingFeedNotice = useMemo(() => {
+    return (
+      allHistoryNotices
+        .filter((n) => n.dateStart > todayDate)
+        .sort((a, b) => a.dateStart.localeCompare(b.dateStart))[0] || null
+    );
+  }, [allHistoryNotices, todayDate]);
+
+  // Most recent completed order for quick context when at Full-Staff
+  const mostRecentPastNotice = useMemo(() => {
+    return allHistoryNotices.find((n) => n.dateStart <= todayDate) || null;
+  }, [allHistoryNotices, todayDate]);
+
+  // Next annual U.S. Flag Code half-staff observance
+  const nextAnnualObservance = useMemo(
+    () => getUpcomingFederalObservance(todayDate),
+    [todayDate]
+  );
+
+  const hasInitialError = !loading && !payload && fetchError;
+  const isHalfStaff = !loading && Boolean(payload) && activeNoticesForState.length > 0;
+  const safePrimaryIdx =
+    activePrimaryIndex < activeNoticesForState.length ? activePrimaryIndex : 0;
+  const primaryNotice: NormalizedNotice | null = activeNoticesForState[safePrimaryIdx] || null;
+  const coActiveNotices = useMemo(
+    () => activeNoticesForState.filter((_, idx) => idx !== safePrimaryIdx),
+    [activeNoticesForState, safePrimaryIdx]
+  );
 
   // Trigger browser notification if alerts are enabled and an active half-staff notice is present
   useEffect(() => {
@@ -412,6 +551,12 @@ export function App() {
     url: `https://halfstaff.org/state/${selectedState.toLowerCase()}/`,
   };
 
+  const formattedToday = useMemo(() => formatDisplayDate(todayDate), [todayDate]);
+  const relativeUpdatedText = useMemo(
+    () => formatRelativeTime(payload?.fetchedAt, nowTick),
+    [payload?.fetchedAt, nowTick]
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col justify-between transition-colors duration-300">
       {/* Skip to Main Content Link for Keyboard & Screen Reader Users */}
@@ -422,43 +567,79 @@ export function App() {
         Skip to main content
       </a>
 
-      {/* Subtle ambient background glow */}
+      {/* Subtle ambient background glow — stays neutral during loading/error */}
       <div
         aria-hidden="true"
         className={`pointer-events-none fixed inset-x-0 top-0 h-96 opacity-40 dark:opacity-35 blur-3xl transition-colors duration-700 ${
-          isHalfStaff
-            ? 'bg-gradient-to-b from-amber-300/35 via-rose-200/15 to-transparent dark:from-amber-600/25 dark:via-rose-900/10'
-            : 'bg-gradient-to-b from-emerald-300/30 via-sky-200/15 to-transparent dark:from-emerald-600/20 dark:via-sky-900/10'
+          loading || hasInitialError
+            ? 'bg-gradient-to-b from-slate-300/30 via-indigo-200/15 to-transparent dark:from-slate-800/30 dark:via-indigo-950/15'
+            : isHalfStaff
+              ? 'bg-gradient-to-b from-amber-300/35 via-rose-200/15 to-transparent dark:from-amber-600/25 dark:via-rose-900/10'
+              : 'bg-gradient-to-b from-emerald-300/30 via-sky-200/15 to-transparent dark:from-emerald-600/20 dark:via-sky-900/10'
         }`}
       />
 
-      {/* Minimal Top Bar */}
+      {/* Top Navigation & Controls Bar */}
       <header className="relative z-20 mx-auto flex w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-3xl items-center justify-between gap-2 px-4 sm:px-6 pt-4 pb-2">
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 items-center gap-2">
+          {/* Brand identity mark on tablet/desktop */}
+          <div className="hidden sm:flex items-center gap-1.5 pr-1 text-xs font-bold tracking-tight text-slate-900 dark:text-white select-none">
+            <span
+              aria-hidden="true"
+              className={`h-2 w-2 rounded-full ${
+                loading || hasInitialError
+                  ? 'bg-slate-400'
+                  : isHalfStaff
+                    ? 'bg-amber-500'
+                    : 'bg-emerald-500'
+              }`}
+            />
+            <span>Half-Staff</span>
+          </div>
+
           <div className="relative flex min-w-0 items-center">
             <MapPin
               aria-hidden="true"
-              className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400"
+              className="pointer-events-none absolute left-3 h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400"
             />
             <select
               aria-label="Select State or Territory"
               value={selectedState}
               onChange={(e) => handleStateChange(e.target.value)}
-              className="h-9 max-w-[180px] sm:max-w-none truncate appearance-none rounded-full border border-slate-300 bg-white/95 pl-7 pr-6 text-xs font-medium text-slate-800 shadow-xs transition hover:border-slate-400 focus:border-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:focus:border-slate-500"
+              className="h-10 max-w-[185px] sm:max-w-none truncate appearance-none rounded-full border border-slate-300 bg-white/95 pl-8 pr-7 text-xs font-medium text-slate-800 shadow-xs transition hover:border-slate-400 focus:border-slate-500 dark:border-slate-800 dark:bg-slate-900/85 dark:text-slate-200 dark:hover:border-slate-700 dark:focus:border-slate-500"
             >
-              {US_STATES.map((st) => (
-                <option
-                  key={st.code}
-                  value={st.code}
-                  className="bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
-                >
-                  {st.name}
-                </option>
-              ))}
+              <optgroup label="U.S. States (50)">
+                {US_STATES_ONLY.map((st) => {
+                  const hasActiveOrder = activeStateCodes.has(st.code);
+                  return (
+                    <option
+                      key={st.code}
+                      value={st.code}
+                      className="bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
+                    >
+                      {hasActiveOrder ? `● ${st.name} (Half-Staff)` : st.name}
+                    </option>
+                  );
+                })}
+              </optgroup>
+              <optgroup label="D.C. & U.S. Territories">
+                {US_TERRITORIES_AND_DC.map((st) => {
+                  const hasActiveOrder = activeStateCodes.has(st.code);
+                  return (
+                    <option
+                      key={st.code}
+                      value={st.code}
+                      className="bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100"
+                    >
+                      {hasActiveOrder ? `● ${st.name} (Half-Staff)` : st.name}
+                    </option>
+                  );
+                })}
+              </optgroup>
             </select>
             <ChevronDown
               aria-hidden="true"
-              className="pointer-events-none absolute right-2 h-3 w-3 shrink-0 text-slate-600 dark:text-slate-400"
+              className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400"
             />
           </div>
 
@@ -468,16 +649,16 @@ export function App() {
             disabled={locating}
             title="Auto-detect my state"
             aria-label="Auto-detect my state"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-700 shadow-xs transition hover:border-slate-400 hover:text-slate-950 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-700 shadow-xs transition hover:border-slate-400 hover:text-slate-950 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/85 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
           >
             <Compass
               aria-hidden="true"
-              className={`h-3.5 w-3.5 shrink-0 ${locating ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
+              className={`h-4 w-4 shrink-0 ${locating ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
             />
           </button>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           {supportsNotifications && (
             <button
               type="button"
@@ -485,10 +666,10 @@ export function App() {
               aria-pressed={alertsEnabled}
               title={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
               aria-label={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
-              className={`flex h-9 shrink-0 items-center gap-1 rounded-full border px-3 text-xs font-medium whitespace-nowrap shadow-xs transition ${
+              className={`flex h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-xs font-medium whitespace-nowrap shadow-xs transition ${
                 alertsEnabled
                   ? 'border-amber-500/60 bg-amber-500/15 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300'
-                  : 'border-slate-300 bg-white/95 text-slate-700 hover:border-slate-400 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white'
+                  : 'border-slate-300 bg-white/95 text-slate-700 hover:border-slate-400 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/85 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white'
               }`}
             >
               {alertsEnabled ? (
@@ -509,12 +690,12 @@ export function App() {
             aria-pressed={theme === 'dark'}
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-700 shadow-xs transition hover:border-slate-400 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-700 shadow-xs transition hover:border-slate-400 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/85 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
           >
             {theme === 'dark' ? (
-              <Sun aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+              <Sun aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-400" />
             ) : (
-              <Moon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-700" />
+              <Moon aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-700" />
             )}
           </button>
 
@@ -524,11 +705,11 @@ export function App() {
             disabled={refreshing}
             title="Refresh live flag status"
             aria-label="Refresh live flag status"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-700 shadow-xs transition hover:border-slate-400 hover:text-slate-950 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-700 shadow-xs transition hover:border-slate-400 hover:text-slate-950 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/85 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
           >
             <RefreshCw
               aria-hidden="true"
-              className={`h-3.5 w-3.5 shrink-0 ${refreshing ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
+              className={`h-4 w-4 shrink-0 ${refreshing ? 'animate-spin text-amber-600 dark:text-amber-400' : ''}`}
             />
           </button>
         </div>
@@ -548,403 +729,709 @@ export function App() {
         )}
       </div>
 
-      {/* Main Focal Point: Simple At-A-Glance View */}
+      {/* Main Focal Point: Stable Vertical Layout */}
       <main
         id="main-content"
         aria-busy={loading}
-        className="relative z-10 mx-auto flex w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-3xl flex-1 flex-col items-center justify-center px-5 sm:px-8 py-6 text-center"
+        className="relative z-10 mx-auto flex w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-3xl flex-1 flex-col items-center px-5 sm:px-8 pt-4 sm:pt-8 pb-6 text-center"
       >
-        {/* Animated 50-Star, 13-Stripe Flagpole Icon */}
-        <FlagpoleGraphic
-          isHalfStaff={isHalfStaff}
-          scope={activeScope}
-          stateCode={selectedState}
-        />
+        <div className="my-auto flex w-full flex-col items-center">
+          {/* Animated 50-Star, 13-Stripe Flagpole Icon */}
+          <FlagpoleGraphic
+            isHalfStaff={isHalfStaff}
+            scope={activeScope}
+            stateCode={selectedState}
+            loading={loading}
+            hasError={hasInitialError}
+          />
 
-        {loading ? (
-          <div
-            role="status"
-            aria-label="Loading live flag status"
-            className="mt-4 w-full max-w-md animate-pulse space-y-2.5"
-          >
-            <div className="mx-auto h-7 w-40 rounded-lg bg-slate-200 dark:bg-slate-800" />
-            <div className="mx-auto h-4 w-64 rounded bg-slate-200/70 dark:bg-slate-800/70" />
-            <span className="sr-only">Loading current flag status...</span>
-          </div>
-        ) : isHalfStaff && primaryNotice ? (
-          <div className="mt-3 w-full max-w-2xl">
-            {/* Simple Status Label */}
-            <div className="inline-flex flex-wrap items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-amber-800 dark:text-amber-300">
-              <span
-                aria-hidden="true"
-                className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-600 dark:bg-amber-400 animate-pulse"
-              />
-              <span>
-                Half-Staff &middot;{' '}
-                {primaryNotice.scope === 'federal'
-                  ? 'U.S. Presidential Order'
-                  : `${selectedStateName} Order`}
-              </span>
-            </div>
-
-            {/* Headline */}
-            <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl md:text-4xl">
-              {primaryNotice.title}
-            </h1>
-
-            {/* 1–2 Sentence Reason with Inline Source Links */}
-            <p className="mt-3 text-sm leading-relaxed text-slate-700 dark:text-slate-300 sm:text-base break-words">
-              {primaryNotice.summary}{' '}
-              <a
-                href={toSafeHttpUrl(primaryNotice.sourceUrl)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-0.5 font-medium whitespace-nowrap text-amber-800 underline decoration-amber-700/50 underline-offset-4 transition hover:text-amber-950 hover:decoration-amber-800 dark:text-amber-300 dark:decoration-amber-400/40 dark:hover:text-amber-200 dark:hover:decoration-amber-300"
-              >
-                <span>{primaryNotice.sourceLabel}</span>
-                <span className="sr-only"> (opens in new tab)</span>
-                <ExternalLink aria-hidden="true" className="ml-0.5 h-3 w-3 shrink-0" />
-              </a>
-              {primaryNotice.secondaryUrl && (
-                <>
-                  <span aria-hidden="true">{' · '}</span>
-                  <a
-                    href={toSafeHttpUrl(primaryNotice.secondaryUrl)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-0.5 text-xs font-medium whitespace-nowrap text-slate-600 underline decoration-slate-400 underline-offset-4 transition hover:text-slate-900 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-slate-200"
-                  >
-                    <span>{primaryNotice.secondaryLabel}</span>
-                    <span className="sr-only"> (opens in new tab)</span>
-                    <ExternalLink aria-hidden="true" className="ml-0.5 h-2.5 w-2.5 shrink-0" />
-                  </a>
-                </>
-              )}
-            </p>
-
-            {/* Subtle Secondary Actions: Date Range, Read Proclamation, Google Calendar & .ics */}
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-slate-600 dark:text-slate-400">
-              <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                <Calendar
-                  aria-hidden="true"
-                  className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400"
-                />
-                {formatDateRange(
-                  primaryNotice.dateStart,
-                  primaryNotice.dateEnd,
-                  primaryNotice.isOngoing
-                )}
-              </span>
-
-              <span aria-hidden="true">&middot;</span>
-
-              <button
-                type="button"
-                aria-expanded={showHeroFullText}
-                aria-controls="hero-full-text"
-                onClick={() => setShowHeroFullText((v) => !v)}
-                className="py-0.5 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
-              >
-                {showHeroFullText ? 'Hide full text' : 'Full text'}
-              </button>
-
-              <span aria-hidden="true">&middot;</span>
-
-              <a
-                href={getGoogleCalendarUrl(primaryNotice)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 py-0.5 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
-              >
-                <CalendarPlus aria-hidden="true" className="h-3 w-3 shrink-0" />
-                <span>Google Calendar</span>
-                <span className="sr-only"> (opens in new tab)</span>
-              </a>
-
-              <span aria-hidden="true">&middot;</span>
-
-              <button
-                type="button"
-                aria-label={`Download .ics calendar event for ${primaryNotice.title}`}
-                onClick={() => {
-                  downloadNoticeIcs(primaryNotice);
-                  showToast('Saved proclamation to calendar (.ics)');
-                }}
-                className="inline-flex items-center gap-1 py-0.5 font-medium whitespace-nowrap text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
-              >
-                <Download aria-hidden="true" className="h-3 w-3 shrink-0" />
-                <span>.ics</span>
-              </button>
-            </div>
-
-            {/* Expandable Full Text Drawer (never truncated or cut off) */}
-            {showHeroFullText && (
-              <div
-                id="hero-full-text"
-                className="mt-4 w-full rounded-2xl border border-slate-200 bg-white/95 p-4 sm:p-5 text-left text-xs sm:text-sm leading-relaxed text-slate-800 shadow-xs whitespace-pre-wrap break-words dark:border-slate-800/90 dark:bg-slate-900/70 dark:text-slate-200"
-              >
-                {primaryNotice.fullText || primaryNotice.summary}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="mt-3 w-full max-w-xl">
-            {/* Full-Staff Status Label */}
-            <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
-              <span
-                aria-hidden="true"
-                className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-600 dark:bg-emerald-400"
-              />
-              <span>Full-Staff Today</span>
-            </div>
-
-            <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl md:text-4xl">
-              No Active Half-Staff Orders
-            </h1>
-
-            {/* Single Clean Sentence with Inline Source Links */}
-            <p className="mt-3 text-sm leading-relaxed text-slate-700 dark:text-slate-300 sm:text-base">
-              The American flag is flying at full-staff in{' '}
-              <span className="font-semibold text-slate-900 dark:font-medium dark:text-white">
-                {selectedStateName}
-              </span>{' '}
-              and nationwide today, with no active proclamations from the{' '}
-              <a
-                href="https://www.whitehouse.gov/presidential-actions/proclamations/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
-              >
-                White House
-                <span className="sr-only"> (opens in new tab)</span>
-              </a>
-              ,{' '}
-              <a
-                href={toSafeHttpUrl(statePortalLink.url)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
-              >
-                {statePortalLink.label}
-                <span className="sr-only"> (opens in new tab)</span>
-              </a>
-              , or{' '}
-              <a
-                href={`https://halfstaff.org/state/${selectedState.toLowerCase()}/`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
-              >
-                HalfStaff.org
-                <span className="sr-only"> (opens in new tab)</span>
-              </a>
-              .
-            </p>
-          </div>
-        )}
-
-        {/* Progressive Disclosure Toggle ("Dig in for more info") */}
-        <div className="mt-8 w-full">
-          <button
-            type="button"
-            aria-expanded={showMoreDrawer}
-            aria-controls="recent-orders-drawer"
-            onClick={() => setShowMoreDrawer((v) => !v)}
-            className="mx-auto inline-flex min-h-9 items-center gap-1.5 rounded-full border border-slate-300 bg-white/95 px-4 py-2 text-xs font-medium text-slate-700 shadow-xs transition hover:border-slate-400 hover:bg-white hover:text-slate-950 dark:border-slate-800/90 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900 dark:hover:text-white"
-          >
-            <span>
-              {showMoreDrawer
-                ? 'Hide recent orders & details'
-                : `Recent ${selectedStateName} & U.S. orders (${recentNoticesForState.length})`}
-            </span>
-            {showMoreDrawer ? (
-              <ChevronUp
-                aria-hidden="true"
-                className="h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400"
-              />
-            ) : (
-              <ChevronDown
-                aria-hidden="true"
-                className="h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400"
-              />
-            )}
-          </button>
-
-          {/* Collapsible History & Live Sources Drawer */}
-          {showMoreDrawer && (
-            <section
-              id="recent-orders-drawer"
-              aria-labelledby="recent-orders-heading"
-              className="mt-4 space-y-3 text-left animate-fadeIn"
+          {loading ? (
+            <div
+              role="status"
+              aria-label="Loading live flag status"
+              className="mt-4 w-full max-w-md animate-pulse space-y-2.5"
             >
-              <h2 id="recent-orders-heading" className="sr-only">
-                Recent {selectedStateName} and U.S. Half-Staff Orders
-              </h2>
+              <div className="mx-auto h-5 w-48 rounded-full bg-slate-200 dark:bg-slate-800" />
+              <div className="mx-auto h-8 w-64 rounded-lg bg-slate-200 dark:bg-slate-800" />
+              <div className="mx-auto h-4 w-72 rounded bg-slate-200/70 dark:bg-slate-800/70" />
+              <span className="sr-only">Checking live federal and state flag proclamations...</span>
+            </div>
+          ) : hasInitialError ? (
+            <div className="mt-3 w-full max-w-md rounded-2xl border border-amber-300/80 bg-white/95 p-5 shadow-xs dark:border-amber-500/30 dark:bg-slate-900/80">
+              <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-amber-800 dark:text-amber-300">
+                <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                <span>Connection Unavailable</span>
+              </div>
+              <h1 className="mt-1.5 text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
+                Unable to Verify Live Flag Status
+              </h1>
+              <p className="mt-2 text-xs sm:text-sm leading-relaxed text-slate-700 dark:text-slate-300">
+                We couldn&apos;t reach the live proclamation feeds right now. Check your connection
+                or verify directly with{' '}
+                <a
+                  href={toSafeHttpUrl(statePortalLink.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium underline decoration-slate-400 underline-offset-4 hover:text-amber-800 dark:hover:text-amber-300"
+                >
+                  {statePortalLink.label}
+                </a>
+                .
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  fetchStatus(true);
+                }}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-amber-600 px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-amber-700 dark:bg-amber-500 dark:text-slate-950 dark:hover:bg-amber-400"
+              >
+                <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
+                <span>Retry Live Feeds</span>
+              </button>
+            </div>
+          ) : isHalfStaff && primaryNotice ? (
+            <div className="mt-3 w-full max-w-2xl">
+              {/* Status Badge with Scope & Local Date */}
+              <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full border border-amber-500/35 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                <span
+                  aria-hidden="true"
+                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-600 dark:bg-amber-400 animate-pulse"
+                />
+                <span>
+                  Half-Staff &middot;{' '}
+                  {activeScope === 'both'
+                    ? `Federal & ${selectedStateName} Orders`
+                    : primaryNotice.scope === 'federal'
+                      ? 'U.S. Presidential Order'
+                      : `${selectedStateName} Order`}
+                </span>
+                {formattedToday && (
+                  <>
+                    <span aria-hidden="true" className="opacity-60">
+                      &middot;
+                    </span>
+                    <span className="font-medium normal-case tracking-normal opacity-90">
+                      {formattedToday}
+                    </span>
+                  </>
+                )}
+              </div>
 
-              {recentNoticesForState.map((notice) => {
-                const isExpanded = expandedHistoryId === notice.id;
-                const fullTextId = `notice-full-text-${notice.id}`;
-                return (
-                  <article
-                    key={notice.id}
-                    className="rounded-2xl border border-slate-200/90 bg-white/95 p-4 sm:p-5 shadow-xs transition hover:border-slate-300 dark:border-slate-800/80 dark:bg-slate-900/60 dark:hover:border-slate-700/80"
+              {/* Headline */}
+              <h1 className="mt-2.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl md:text-4xl">
+                {primaryNotice.title}
+              </h1>
+
+              {/* 1–2 Sentence Reason with Inline Source Links */}
+              <p className="mt-3 text-sm leading-relaxed text-slate-700 dark:text-slate-300 sm:text-base break-words">
+                {primaryNotice.summary}{' '}
+                <a
+                  href={toSafeHttpUrl(primaryNotice.sourceUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 font-medium whitespace-nowrap text-amber-800 underline decoration-amber-700/50 underline-offset-4 transition hover:text-amber-950 hover:decoration-amber-800 dark:text-amber-300 dark:decoration-amber-400/40 dark:hover:text-amber-200 dark:hover:decoration-amber-300"
+                >
+                  <span>{primaryNotice.sourceLabel}</span>
+                  <span className="sr-only"> (opens in new tab)</span>
+                  <ExternalLink aria-hidden="true" className="ml-0.5 h-3 w-3 shrink-0" />
+                </a>
+                {primaryNotice.secondaryUrl && (
+                  <>
+                    <span aria-hidden="true">{' · '}</span>
+                    <a
+                      href={toSafeHttpUrl(primaryNotice.secondaryUrl)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 text-xs font-medium whitespace-nowrap text-slate-600 underline decoration-slate-400 underline-offset-4 transition hover:text-slate-900 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-slate-200"
+                    >
+                      <span>{primaryNotice.secondaryLabel}</span>
+                      <span className="sr-only"> (opens in new tab)</span>
+                      <ExternalLink aria-hidden="true" className="ml-0.5 h-2.5 w-2.5 shrink-0" />
+                    </a>
+                  </>
+                )}
+              </p>
+
+              {/* Tactile Secondary Action Pills: Date Range, Read Proclamation, Google Calendar & .ics */}
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
+                <span className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-slate-200/90 bg-slate-100/80 px-3 py-1 font-medium whitespace-nowrap text-slate-700 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300">
+                  <Calendar
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-400"
+                  />
+                  {formatDateRange(
+                    primaryNotice.dateStart,
+                    primaryNotice.dateEnd,
+                    primaryNotice.isOngoing
+                  )}
+                </span>
+
+                <button
+                  type="button"
+                  aria-expanded={showHeroFullText}
+                  aria-controls="hero-full-text"
+                  onClick={() => setShowHeroFullText((v) => !v)}
+                  className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 font-medium whitespace-nowrap shadow-2xs transition ${
+                    showHeroFullText
+                      ? 'border-amber-500/60 bg-amber-500/15 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200'
+                      : 'border-slate-300 bg-white/95 text-slate-700 hover:border-slate-400 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:text-white'
+                  }`}
+                >
+                  <FileText aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                  <span>{showHeroFullText ? 'Hide proclamation' : 'Read proclamation'}</span>
+                  {showHeroFullText ? (
+                    <ChevronUp aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                </button>
+
+                <a
+                  href={getGoogleCalendarUrl(primaryNotice)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-slate-300 bg-white/95 px-3 py-1 font-medium whitespace-nowrap text-slate-700 shadow-2xs transition hover:border-slate-400 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:text-white"
+                >
+                  <CalendarPlus aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                  <span>Google Calendar</span>
+                  <span className="sr-only"> (opens in new tab)</span>
+                </a>
+
+                <button
+                  type="button"
+                  aria-label={`Download .ics calendar event for ${primaryNotice.title}`}
+                  onClick={() => {
+                    downloadNoticeIcs(primaryNotice);
+                    showToast('Saved proclamation to calendar (.ics)');
+                  }}
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-slate-300 bg-white/95 px-3 py-1 font-medium whitespace-nowrap text-slate-700 shadow-2xs transition hover:border-slate-400 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:text-white"
+                >
+                  <Download aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                  <span>.ics</span>
+                </button>
+              </div>
+
+              {/* Expandable Full Text Drawer with Structured Paragraph & Clause Typography */}
+              {showHeroFullText && (
+                <div
+                  id="hero-full-text"
+                  className="mt-4 w-full rounded-2xl border border-slate-200 bg-white/95 p-4 sm:p-5 text-left text-xs sm:text-sm text-slate-800 shadow-xs break-words animate-fadeIn dark:border-slate-800/90 dark:bg-slate-900/75 dark:text-slate-200"
+                >
+                  {renderFormattedFullText(primaryNotice.fullText || primaryNotice.summary)}
+                </div>
+              )}
+
+              {/* Co-Active Orders Banner (when both Federal & State or multiple State orders overlap) */}
+              {coActiveNotices.length > 0 && (
+                <div
+                  aria-label="Additional active half-staff proclamations today"
+                  className="mt-4 space-y-2 text-left"
+                >
+                  {coActiveNotices.map((coNotice) => {
+                    const actualIdx = activeNoticesForState.findIndex((n) => n.id === coNotice.id);
+                    return (
+                      <div
+                        key={coNotice.id}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-xs shadow-2xs dark:border-sky-400/25 dark:bg-sky-500/10"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-sky-900 dark:text-sky-300">
+                            <Layers aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                            <span>
+                              Co-Active{' '}
+                              {coNotice.scope === 'federal'
+                                ? 'U.S. Presidential Order'
+                                : `${coNotice.stateName || selectedStateName} Order`}
+                            </span>
+                            <span aria-hidden="true">&middot;</span>
+                            <span className="font-normal normal-case">
+                              {formatDateRange(
+                                coNotice.dateStart,
+                                coNotice.dateEnd,
+                                coNotice.isOngoing
+                              )}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">
+                            {coNotice.title}
+                          </p>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (actualIdx >= 0) {
+                                setActivePrimaryIndex(actualIdx);
+                                setShowHeroFullText(false);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-full border border-sky-600/30 bg-white/90 px-3 py-1 text-[11px] font-semibold text-sky-900 transition hover:bg-white dark:border-sky-400/30 dark:bg-slate-900/90 dark:text-sky-200 dark:hover:bg-slate-900"
+                          >
+                            <span>Show in Hero</span>
+                          </button>
+                          <a
+                            href={toSafeHttpUrl(coNotice.sourceUrl)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-sky-900 underline decoration-sky-600/40 underline-offset-4 hover:text-sky-950 dark:text-sky-200"
+                          >
+                            <span>Source</span>
+                            <ExternalLink aria-hidden="true" className="h-3 w-3 shrink-0" />
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-3 w-full max-w-xl">
+              {/* Full-Staff Status Badge with Local Date */}
+              <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                <span
+                  aria-hidden="true"
+                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-600 dark:bg-emerald-400"
+                />
+                <span>Full-Staff Today</span>
+                {formattedToday && (
+                  <>
+                    <span aria-hidden="true" className="opacity-60">
+                      &middot;
+                    </span>
+                    <span className="font-medium normal-case tracking-normal opacity-90">
+                      {formattedToday}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <h1 className="mt-2.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl md:text-4xl">
+                No Active Half-Staff Orders
+              </h1>
+
+              {/* Single Clean Sentence with Inline Source Links */}
+              <p className="mt-3 text-sm leading-relaxed text-slate-700 dark:text-slate-300 sm:text-base">
+                The American flag is flying at full-staff in{' '}
+                <span className="font-semibold text-slate-900 dark:font-medium dark:text-white">
+                  {selectedStateName}
+                </span>{' '}
+                and nationwide today, with no active proclamations from the{' '}
+                <a
+                  href="https://www.whitehouse.gov/presidential-actions/proclamations/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
+                >
+                  White House
+                  <span className="sr-only"> (opens in new tab)</span>
+                </a>
+                ,{' '}
+                <a
+                  href={toSafeHttpUrl(statePortalLink.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
+                >
+                  {statePortalLink.label}
+                  <span className="sr-only"> (opens in new tab)</span>
+                </a>
+                , or{' '}
+                <a
+                  href={`https://halfstaff.org/state/${selectedState.toLowerCase()}/`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-slate-800 underline decoration-slate-400 underline-offset-4 transition hover:text-amber-800 hover:decoration-amber-700 dark:font-normal dark:text-slate-200 dark:decoration-slate-600 dark:hover:text-amber-300 dark:hover:decoration-amber-400"
+                >
+                  HalfStaff.org
+                  <span className="sr-only"> (opens in new tab)</span>
+                </a>
+                .
+              </p>
+
+              {/* At-a-glance Upcoming or Last Order Context Pill */}
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                {upcomingFeedNotice ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowMoreDrawer(true)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/35 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-900 transition hover:bg-sky-500/15 dark:border-sky-400/30 dark:text-sky-300"
                   >
-                    <div>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600 dark:text-slate-400">
-                        <span
-                          className={`font-semibold uppercase tracking-wider whitespace-nowrap ${
-                            notice.scope === 'federal'
-                              ? 'text-blue-700 dark:text-blue-400'
-                              : 'text-amber-800 dark:text-amber-300'
-                          }`}
-                        >
-                          {notice.scope === 'federal'
-                            ? 'Federal'
-                            : notice.stateName || notice.stateCode}
+                    <Calendar aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      Upcoming:{' '}
+                      <strong className="font-semibold">{upcomingFeedNotice.title}</strong> (
+                      {formatDateRange(
+                        upcomingFeedNotice.dateStart,
+                        upcomingFeedNotice.dateEnd,
+                        upcomingFeedNotice.isOngoing
+                      )}
+                      )
+                    </span>
+                  </button>
+                ) : (
+                  <div className="inline-flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 rounded-full border border-slate-200/90 bg-white/80 px-3.5 py-1.5 text-[11px] text-slate-600 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/50 dark:text-slate-400">
+                    {mostRecentPastNotice && (
+                      <>
+                        <span>
+                          Last order:{' '}
+                          <button
+                            type="button"
+                            onClick={() => setShowMoreDrawer(true)}
+                            className="font-medium text-slate-800 underline decoration-slate-300 underline-offset-2 hover:text-slate-950 dark:text-slate-200 dark:decoration-slate-700 dark:hover:text-white"
+                          >
+                            {formatDateRange(
+                              mostRecentPastNotice.dateStart,
+                              mostRecentPastNotice.dateEnd,
+                              mostRecentPastNotice.isOngoing
+                            )}
+                          </button>
                         </span>
                         <span aria-hidden="true">&middot;</span>
-                        <span className="whitespace-nowrap">
-                          {formatDateRange(notice.dateStart, notice.dateEnd, notice.isOngoing)}
-                        </span>
-                      </div>
-                      <h3 className="mt-1 text-sm sm:text-base font-semibold text-slate-900 dark:text-white">
-                        {notice.title}
-                      </h3>
-                    </div>
-
-                    {!isExpanded ? (
-                      <p className="mt-1.5 text-xs sm:text-sm leading-relaxed text-slate-700 dark:text-slate-300 break-words">
-                        {notice.summary}
-                      </p>
-                    ) : (
-                      <div
-                        id={fullTextId}
-                        className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed text-slate-800 whitespace-pre-wrap break-words dark:border-slate-800 dark:bg-slate-950/80 dark:text-slate-200"
-                      >
-                        {notice.fullText || notice.summary}
-                      </div>
+                      </>
                     )}
+                    <span className="inline-flex items-center gap-1">
+                      <Calendar aria-hidden="true" className="h-3 w-3 shrink-0 opacity-75" />
+                      <span>
+                        Next annual observance:{' '}
+                        <strong className="font-medium text-slate-800 dark:text-slate-200">
+                          {nextAnnualObservance.name}
+                        </strong>{' '}
+                        ({nextAnnualObservance.formattedDate})
+                      </span>
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
-                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2.5 text-[11px] sm:text-xs whitespace-nowrap dark:border-slate-800/60">
-                      <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
-                        <a
-                          href={toSafeHttpUrl(notice.sourceUrl)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-label={`${notice.sourceLabel} for ${notice.title} (opens in new tab)`}
-                          className="inline-flex items-center gap-1 py-0.5 font-medium text-amber-800 hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-200"
-                        >
-                          <span className="sm:hidden">Source</span>
-                          <span className="hidden sm:inline">{notice.sourceLabel}</span>
-                          <ExternalLink aria-hidden="true" className="h-3 w-3 shrink-0" />
-                        </a>
+          {/* Progressive Disclosure Toggle ("Dig in for more info") */}
+          {!loading && payload && (
+            <div className="mt-7 w-full">
+              <button
+                type="button"
+                aria-expanded={showMoreDrawer}
+                aria-controls="recent-orders-drawer"
+                onClick={() => setShowMoreDrawer((v) => !v)}
+                className="mx-auto inline-flex min-h-10 items-center gap-1.5 rounded-full border border-slate-300 bg-white/95 px-4 py-2 text-xs font-medium text-slate-700 shadow-xs transition hover:border-slate-400 hover:bg-white hover:text-slate-950 dark:border-slate-800/90 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900 dark:hover:text-white"
+              >
+                <span>
+                  {showMoreDrawer
+                    ? 'Hide recent orders & live feeds'
+                    : `Recent ${selectedStateName} & U.S. orders (${allHistoryNotices.length})`}
+                </span>
+                {showMoreDrawer ? (
+                  <ChevronUp
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400"
+                  />
+                ) : (
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400"
+                  />
+                )}
+              </button>
 
-                        <a
-                          href={getGoogleCalendarUrl(notice)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-label={`Add ${notice.title} to Google Calendar (opens in new tab)`}
-                          className="inline-flex items-center gap-1 py-0.5 text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
-                        >
-                          <CalendarPlus
-                            aria-hidden="true"
-                            className="h-3 w-3 shrink-0 text-slate-500 dark:text-slate-400"
-                          />
-                          <span>Google Calendar</span>
-                        </a>
+              {/* Collapsible History & Live Sources Drawer */}
+              {showMoreDrawer && (
+                <section
+                  id="recent-orders-drawer"
+                  aria-labelledby="recent-orders-heading"
+                  className="mt-4 space-y-3 text-left animate-fadeIn"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                    <h2
+                      id="recent-orders-heading"
+                      className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400"
+                    >
+                      Proclamation History
+                    </h2>
 
-                        <button
-                          type="button"
-                          aria-label={`Download .ics calendar event for ${notice.title}`}
-                          onClick={() => {
-                            downloadNoticeIcs(notice);
-                            showToast('Saved proclamation to calendar (.ics)');
-                          }}
-                          className="inline-flex items-center gap-1 py-0.5 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
-                        >
-                          <Download aria-hidden="true" className="h-3 w-3 shrink-0" />
-                          <span>.ics</span>
-                        </button>
-                      </div>
-
+                    {/* Filter Tabs: All / State / Federal */}
+                    <div
+                      role="group"
+                      aria-label="Filter proclamations by scope"
+                      className="inline-flex items-center rounded-full border border-slate-200 bg-white/90 p-0.5 text-[11px] shadow-2xs dark:border-slate-800 dark:bg-slate-900/80"
+                    >
                       <button
                         type="button"
-                        aria-expanded={isExpanded}
-                        aria-controls={fullTextId}
-                        aria-label={`${isExpanded ? 'Hide full text' : 'Show full text'} for ${notice.title}`}
-                        onClick={() => setExpandedHistoryId(isExpanded ? null : notice.id)}
-                        className="shrink-0 py-0.5 font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                        aria-pressed={drawerFilter === 'all'}
+                        onClick={() => {
+                          setDrawerFilter('all');
+                          setVisibleHistoryCount(INITIAL_HISTORY_LIMIT);
+                        }}
+                        className={`rounded-full px-2.5 py-1 font-medium transition ${
+                          drawerFilter === 'all'
+                            ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                            : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                        }`}
                       >
-                        {isExpanded ? 'Hide text' : 'Full text'}
+                        All ({allHistoryNotices.length})
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={drawerFilter === 'state'}
+                        onClick={() => {
+                          setDrawerFilter('state');
+                          setVisibleHistoryCount(INITIAL_HISTORY_LIMIT);
+                        }}
+                        className={`rounded-full px-2.5 py-1 font-medium transition ${
+                          drawerFilter === 'state'
+                            ? 'bg-amber-600 text-white dark:bg-amber-500 dark:text-slate-950'
+                            : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                      >
+                        {selectedState} ({stateHistoryCount})
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={drawerFilter === 'federal'}
+                        onClick={() => {
+                          setDrawerFilter('federal');
+                          setVisibleHistoryCount(INITIAL_HISTORY_LIMIT);
+                        }}
+                        className={`rounded-full px-2.5 py-1 font-medium transition ${
+                          drawerFilter === 'federal'
+                            ? 'bg-blue-600 text-white dark:bg-blue-500 dark:text-slate-950'
+                            : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                      >
+                        Federal ({federalHistoryCount})
                       </button>
                     </div>
-                  </article>
-                );
-              })}
+                  </div>
 
-              {/* Compact Data Source Status inside the drawer */}
-              {payload?.sources && (
-                <section
-                  aria-labelledby="live-feeds-heading"
-                  className="rounded-2xl border border-slate-200/90 bg-white/85 p-3.5 sm:p-4 text-[11px] sm:text-xs text-slate-600 shadow-xs dark:border-slate-800/60 dark:bg-slate-900/30 dark:text-slate-400"
-                >
-                  <div className="mb-2 flex items-center justify-between gap-2 font-medium text-slate-800 dark:text-slate-200">
-                    <h2 id="live-feeds-heading" className="whitespace-nowrap text-[11px] sm:text-xs font-medium">
-                      Connected Live Feeds
-                    </h2>
-                    {payload.fetchedAt && (
-                      <span className="shrink-0 whitespace-nowrap text-slate-600 dark:text-slate-400">
-                        Updated{' '}
-                        {new Date(payload.fetchedAt).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                        })}
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    {payload.sources.map((src) => (
-                      <div key={src.name} className="flex items-center justify-between gap-3">
-                        <a
-                          href={toSafeHttpUrl(src.url)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="min-w-0 truncate hover:text-slate-900 hover:underline dark:hover:text-slate-200"
+                  {recentNoticesForState.length === 0 ? (
+                    <div className="rounded-2xl border border-slate-200/90 bg-white/95 p-6 text-center text-xs text-slate-600 dark:border-slate-800/80 dark:bg-slate-900/60 dark:text-slate-400">
+                      No proclamations found in the current feed for this filter. Use the{' '}
+                      <a
+                        href={toSafeHttpUrl(statePortalLink.url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium underline"
+                      >
+                        {statePortalLink.label}
+                      </a>{' '}
+                      portal for historical archives.
+                    </div>
+                  ) : (
+                    recentNoticesForState.map((notice) => {
+                      const isExpanded = expandedHistoryId === notice.id;
+                      const isUpcoming = notice.dateStart > todayDate;
+                      const fullTextId = `notice-full-text-${notice.id}`;
+                      return (
+                        <article
+                          key={notice.id}
+                          className="rounded-2xl border border-slate-200/90 bg-white/95 p-4 sm:p-5 shadow-xs transition hover:border-slate-300 dark:border-slate-800/80 dark:bg-slate-900/60 dark:hover:border-slate-700/80"
                         >
-                          {src.name}
-                          <span className="sr-only"> (opens in new tab)</span>
-                        </a>
-                        <span
-                          className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium ${
-                            src.status === 'ok'
-                              ? 'text-emerald-700 dark:text-emerald-400'
-                              : 'text-amber-800 dark:text-amber-300'
-                          }`}
-                        >
-                          <span
-                            aria-hidden="true"
-                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                              src.status === 'ok'
-                                ? 'bg-emerald-600 dark:bg-emerald-400'
-                                : 'bg-amber-600 dark:bg-amber-400'
-                            }`}
-                          />
-                          <span>{src.status === 'ok' ? 'Live' : 'Fallback'}</span>
+                          <div>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-600 dark:text-slate-400">
+                              <span
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap ${
+                                  notice.scope === 'federal'
+                                    ? 'bg-blue-500/10 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
+                                    : 'bg-amber-500/10 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
+                                }`}
+                              >
+                                {notice.scope === 'federal'
+                                  ? 'Federal'
+                                  : notice.stateName || notice.stateCode}
+                              </span>
+
+                              {isUpcoming && (
+                                <span className="inline-flex items-center rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-800 dark:text-sky-300">
+                                  Upcoming
+                                </span>
+                              )}
+
+                              <span className="inline-flex items-center gap-1 whitespace-nowrap font-medium">
+                                <Calendar aria-hidden="true" className="h-3 w-3 shrink-0 opacity-75" />
+                                {formatDateRange(
+                                  notice.dateStart,
+                                  notice.dateEnd,
+                                  notice.isOngoing
+                                )}
+                              </span>
+                            </div>
+                            <h3 className="mt-1.5 text-sm sm:text-base font-semibold text-slate-900 dark:text-white">
+                              {notice.title}
+                            </h3>
+                          </div>
+
+                          {!isExpanded ? (
+                            <p className="mt-1.5 text-xs sm:text-sm leading-relaxed text-slate-700 dark:text-slate-300 break-words">
+                              {notice.summary}
+                            </p>
+                          ) : (
+                            <div
+                              id={fullTextId}
+                              className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3.5 sm:p-4 text-xs sm:text-sm text-slate-800 break-words animate-fadeIn dark:border-slate-800 dark:bg-slate-950/80 dark:text-slate-200"
+                            >
+                              {renderFormattedFullText(notice.fullText || notice.summary)}
+                            </div>
+                          )}
+
+                          <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 pt-3 text-[11px] sm:text-xs dark:border-slate-800/60">
+                            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
+                              <a
+                                href={toSafeHttpUrl(notice.sourceUrl)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label={`${notice.sourceLabel} for ${notice.title} (opens in new tab)`}
+                                className="inline-flex min-h-7 items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 font-medium text-amber-900 transition hover:bg-amber-500/20 dark:border-amber-500/25 dark:text-amber-300 dark:hover:bg-amber-500/20"
+                              >
+                                <span className="sm:hidden">Source</span>
+                                <span className="hidden sm:inline">{notice.sourceLabel}</span>
+                                <ExternalLink aria-hidden="true" className="h-3 w-3 shrink-0" />
+                              </a>
+
+                              <a
+                                href={getGoogleCalendarUrl(notice)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label={`Add ${notice.title} to Google Calendar (opens in new tab)`}
+                                className="inline-flex min-h-7 items-center gap-1 rounded-full border border-slate-200 bg-slate-100/70 px-2.5 py-1 text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
+                              >
+                                <CalendarPlus
+                                  aria-hidden="true"
+                                  className="h-3 w-3 shrink-0 text-slate-500 dark:text-slate-400"
+                                />
+                                <span>Calendar</span>
+                              </a>
+
+                              <button
+                                type="button"
+                                aria-label={`Download .ics calendar event for ${notice.title}`}
+                                onClick={() => {
+                                  downloadNoticeIcs(notice);
+                                  showToast('Saved proclamation to calendar (.ics)');
+                                }}
+                                className="inline-flex min-h-7 items-center gap-1 rounded-full border border-slate-200 bg-slate-100/70 px-2.5 py-1 text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
+                              >
+                                <Download aria-hidden="true" className="h-3 w-3 shrink-0" />
+                                <span>.ics</span>
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              aria-expanded={isExpanded}
+                              aria-controls={fullTextId}
+                              aria-label={`${isExpanded ? 'Hide full text' : 'Show full text'} for ${notice.title}`}
+                              onClick={() => setExpandedHistoryId(isExpanded ? null : notice.id)}
+                              className="inline-flex min-h-7 shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
+                            >
+                              <span>{isExpanded ? 'Hide text' : 'Full text'}</span>
+                              {isExpanded ? (
+                                <ChevronUp aria-hidden="true" className="h-3 w-3 shrink-0" />
+                              ) : (
+                                <ChevronDown aria-hidden="true" className="h-3 w-3 shrink-0" />
+                              )}
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })
+                  )}
+
+                  {/* Pagination ("Show more") when more notices exist in the filtered set */}
+                  {filteredHistoryNotices.length > visibleHistoryCount && (
+                    <div className="pt-1 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setVisibleHistoryCount((c) => c + INITIAL_HISTORY_LIMIT)}
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-slate-300 bg-white/95 px-4 py-1.5 text-xs font-medium text-slate-700 shadow-2xs transition hover:border-slate-400 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white"
+                      >
+                        <span>
+                          Show more orders ({filteredHistoryNotices.length - visibleHistoryCount}{' '}
+                          remaining)
                         </span>
+                        <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Compact Data Source Status inside the drawer */}
+                  {payload?.sources && (
+                    <section
+                      aria-labelledby="live-feeds-heading"
+                      className="rounded-2xl border border-slate-200/90 bg-white/85 p-3.5 sm:p-4 text-[11px] sm:text-xs text-slate-600 shadow-xs dark:border-slate-800/60 dark:bg-slate-900/30 dark:text-slate-400"
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-2 font-medium text-slate-800 dark:text-slate-200">
+                        <h2
+                          id="live-feeds-heading"
+                          className="whitespace-nowrap text-[11px] sm:text-xs font-medium"
+                        >
+                          Connected Live Feeds
+                        </h2>
+                        {payload.fetchedAt && (
+                          <span className="shrink-0 whitespace-nowrap text-slate-600 dark:text-slate-400">
+                            Updated{' '}
+                            {new Date(payload.fetchedAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit',
+                            })}
+                          </span>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                      <div className="space-y-1.5">
+                        {payload.sources.map((src) => (
+                          <div key={src.name} className="flex items-center justify-between gap-3">
+                            <a
+                              href={toSafeHttpUrl(src.url)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="min-w-0 truncate hover:text-slate-900 hover:underline dark:hover:text-slate-200"
+                            >
+                              {src.name}
+                              <span className="sr-only"> (opens in new tab)</span>
+                            </a>
+                            <span
+                              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium ${
+                                src.status === 'ok'
+                                  ? 'text-emerald-700 dark:text-emerald-400'
+                                  : 'text-amber-800 dark:text-amber-300'
+                              }`}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                  src.status === 'ok'
+                                    ? 'bg-emerald-600 dark:bg-emerald-400'
+                                    : 'bg-amber-600 dark:bg-amber-400'
+                                }`}
+                              />
+                              <span>{src.status === 'ok' ? 'Live' : 'Fallback'}</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                 </section>
               )}
-            </section>
+            </div>
           )}
         </div>
       </main>
 
-      {/* Whisper-quiet footer with WCAG AA contrast */}
-      <footer className="relative z-10 pb-4 text-center text-[11px] text-slate-600 dark:text-slate-400">
-        Real-time U.S. &amp; State Flag Status
+      {/* Whisper-quiet footer with live freshness indicator & WCAG AA contrast */}
+      <footer className="relative z-10 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-4 pb-4 text-center text-[11px] text-slate-600 dark:text-slate-400">
+        <span>Real-time U.S. &amp; State Flag Status</span>
+        {relativeUpdatedText && (
+          <>
+            <span aria-hidden="true">&middot;</span>
+            <span className="inline-flex items-center gap-1">
+              <Clock aria-hidden="true" className="h-3 w-3 shrink-0 opacity-75" />
+              <span>{relativeUpdatedText}</span>
+            </span>
+          </>
+        )}
       </footer>
     </div>
   );

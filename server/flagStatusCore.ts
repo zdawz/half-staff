@@ -1212,7 +1212,7 @@ export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagSt
         return (b.dateEnd || '').localeCompare(a.dateEnd || '');
       });
 
-      const todayIso = new Date().toISOString().slice(0, 10);
+      const todayIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
       const latestDatasetDate =
         merged.reduce((max, n) => (n.dateStart > max ? n.dateStart : max), '') || todayIso;
 

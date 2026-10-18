@@ -33,13 +33,44 @@ select:focus-visible {
   }
 }
 
+@keyframes wavePennant {
+  0%, 100% {
+    transform: perspective(260px) rotateY(3.5deg) skewY(1.2deg);
+  }
+  50% {
+    transform: perspective(260px) rotateY(-4.5deg) skewY(-1.6deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .animate-flag-wave {
   animation: waveSlow 4.5s ease-in-out infinite;
   transform-origin: left center;
 }
 
+.animate-pennant-wave {
+  animation: wavePennant 3.8s ease-in-out infinite;
+  transform-origin: left center;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-flag-wave {
+  .animate-flag-wave,
+  .animate-pennant-wave,
+  .animate-fadeIn {
     animation: none !important;
   }
 }
