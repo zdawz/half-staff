@@ -151,56 +151,63 @@ async function safeFetchText(
   url: string,
   options: { timeoutMs?: number; accept?: string; maxBytes?: number } = {}
 ): Promise<{ ok: boolean; status: number; text: string }> {
-  const { timeoutMs = 8000, accept = 'text/html,application/xhtml+xml', maxBytes = MAX_RESPONSE_BYTES } =
+  const { timeoutMs = 4500, accept = 'text/html,application/xhtml+xml', maxBytes = MAX_RESPONSE_BYTES } =
     options;
 
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; HalfStaffApp/1.0)',
-      Accept: accept,
-    },
-    redirect: 'follow',
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!res.ok) {
-    return { ok: false, status: res.status, text: '' };
-  }
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; HalfStaffApp/1.0)',
+        Accept: accept,
+      },
+      redirect: 'follow',
+      signal: controller.signal,
+    });
 
-  const contentLength = Number.parseInt(res.headers.get('content-length') || '0', 10);
-  if (contentLength > maxBytes) {
-    throw new Error('Upstream response exceeded size limit');
-  }
+    if (!res.ok) {
+      return { ok: false, status: res.status, text: '' };
+    }
 
-  if (!res.body) {
-    const text = await res.text();
-    if (text.length > maxBytes) {
+    const contentLength = Number.parseInt(res.headers.get('content-length') || '0', 10);
+    if (contentLength > maxBytes) {
       throw new Error('Upstream response exceeded size limit');
     }
-    return { ok: true, status: res.status, text };
-  }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let totalBytes = 0;
-  let text = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) {
-      totalBytes += value.byteLength;
-      if (totalBytes > maxBytes) {
-        await reader.cancel();
+    if (!res.body) {
+      const text = await res.text();
+      if (text.length > maxBytes) {
         throw new Error('Upstream response exceeded size limit');
       }
-      text += decoder.decode(value, { stream: true });
+      return { ok: true, status: res.status, text };
     }
-  }
-  text += decoder.decode();
 
-  return { ok: true, status: res.status, text };
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let totalBytes = 0;
+    let text = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        totalBytes += value.byteLength;
+        if (totalBytes > maxBytes) {
+          await reader.cancel();
+          throw new Error('Upstream response exceeded size limit');
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+    }
+    text += decoder.decode();
+
+    return { ok: true, status: res.status, text };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function decodeHtmlEntities(input: string): string {
@@ -1141,7 +1148,6 @@ const MIN_FORCE_REFRESH_INTERVAL_MS = 3_000;
 
 let cachedPayload: { data: FlagStatusPayload; fetchedAtMs: number; expiresAt: number } | null =
   null;
-let inflightPromise: Promise<FlagStatusPayload> | null = null;
 
 export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagStatusPayload> {
   const now = Date.now();
@@ -1160,13 +1166,7 @@ export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagSt
     }
   }
 
-  // Deduplicate concurrent in-flight requests
-  if (inflightPromise) {
-    return inflightPromise;
-  }
-
-  inflightPromise = (async () => {
-    try {
+  return (async () => {
       const [hsResult, whResult, wiResult, mdResult, iaResult] = await Promise.all([
         fetchHalfStaffOrgNotices(),
         fetchWhiteHouseProclamations(),
@@ -1255,10 +1255,5 @@ export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagSt
       };
 
       return payload;
-    } finally {
-      inflightPromise = null;
-    }
   })();
-
-  return inflightPromise;
 }

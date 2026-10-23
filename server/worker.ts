@@ -96,7 +96,8 @@ export default {
       }
 
       try {
-        const forceRefresh = url.searchParams.get('refresh') === '1';
+        const forceRefresh =
+          url.searchParams.get('refresh') === '1' || url.searchParams.get('fresh') === '1';
         const payload = await getFlagStatusPayload(forceRefresh);
 
         return withSecurityHeaders(

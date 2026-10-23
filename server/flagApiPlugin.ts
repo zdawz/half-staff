@@ -43,7 +43,8 @@ export function flagApiPlugin(): Plugin {
           return;
         }
 
-        const forceRefresh = url.searchParams.get('refresh') === '1';
+        const forceRefresh =
+          url.searchParams.get('refresh') === '1' || url.searchParams.get('fresh') === '1';
         const payload = await getFlagStatusPayload(forceRefresh);
         res.statusCode = 200;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');

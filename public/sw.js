@@ -1,4 +1,4 @@
-const CACHE_NAME = 'half-staff-pwa-v3';
+const CACHE_NAME = 'half-staff-pwa-v4';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -39,20 +39,23 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Always bypass cache for real-time geolocation endpoint
-  if (url.pathname.startsWith('/api/locate')) {
+  // Always bypass Service Worker interception for geolocation and forced live refreshes
+  if (
+    url.pathname.startsWith('/api/locate') ||
+    (url.pathname.startsWith('/api/flag-status') &&
+      (url.searchParams.get('refresh') === '1' || url.searchParams.get('fresh') === '1'))
+  ) {
     return;
   }
 
-  // Network-first with cache fallback for live flag status API and HTML navigation
+  // Network-first with cache fallback for standard flag status API and HTML navigation
   if (url.pathname.startsWith('/api/flag-status') || request.mode === 'navigate') {
-    const isForceRefresh = url.searchParams.get('refresh') === '1';
     const cacheKey = url.pathname.startsWith('/api/flag-status')
       ? new Request(new URL('/api/flag-status', self.location.origin).toString())
       : request;
 
     event.respondWith(
-      fetch(request, isForceRefresh ? { cache: 'no-store' } : undefined)
+      fetch(request)
         .then((response) => {
           if (response.ok) {
             const clone = response.clone();
