@@ -172,10 +172,11 @@ export function App() {
   useEffect(() => {
     const isDark = theme === 'dark';
     document.documentElement.classList.toggle('dark', isDark);
-    const metaTheme = document.querySelector('meta[name="theme-color"]');
-    if (metaTheme) {
-      metaTheme.setAttribute('content', isDark ? '#0f172a' : '#f8fafc');
-    }
+    // Update every theme-color meta (including media-scoped ones) so an explicit
+    // in-app theme choice overrides the system preference in Safari's status bar
+    document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+      meta.setAttribute('content', isDark ? '#020617' : '#f8fafc');
+    });
   }, [theme]);
 
   // Follow device dark mode changes automatically unless the user explicitly toggled a preference
@@ -585,7 +586,7 @@ export function App() {
   };
 
   return (
-    <div className="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col justify-between overflow-x-hidden transition-colors duration-300">
+    <div className="relative min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col justify-between overflow-x-hidden transition-colors duration-300">
       {/* Skip to Main Content Link for Keyboard & Screen Reader Users */}
       <a
         href="#main-content"
@@ -597,7 +598,7 @@ export function App() {
       {/* Subtle ambient background glow — stays neutral during loading/error */}
       <div
         aria-hidden="true"
-        className={`pointer-events-none fixed inset-x-0 top-0 h-96 opacity-40 dark:opacity-35 blur-3xl transition-colors duration-700 ${
+        className={`pointer-events-none absolute inset-x-0 top-0 h-96 opacity-40 dark:opacity-35 blur-3xl transition-colors duration-700 ${
           loading || hasInitialError
             ? 'bg-gradient-to-b from-slate-300/30 via-indigo-200/15 to-transparent dark:from-slate-800/30 dark:via-indigo-950/15'
             : isHalfStaff

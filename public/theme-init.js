@@ -7,9 +7,9 @@
         ? saved === 'dark'
         : window.matchMedia('(prefers-color-scheme: dark)').matches;
     document.documentElement.classList.toggle('dark', isDark);
-    var metaTheme = document.querySelector('meta[name="theme-color"]');
-    if (metaTheme) {
-      metaTheme.setAttribute('content', isDark ? '#0f172a' : '#f8fafc');
+    var metas = document.querySelectorAll('meta[name="theme-color"]');
+    for (var i = 0; i < metas.length; i++) {
+      metas[i].setAttribute('content', isDark ? '#020617' : '#f8fafc');
     }
   } catch (e) {
     // ignore storage errors

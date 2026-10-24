@@ -2,6 +2,25 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Solid root backgrounds + color-scheme so Safari paints the notch / status bar
+ * safe area (and overscroll regions) with the active theme instead of white.
+ * Colors match body bg-slate-50 / dark:bg-slate-950 and the theme-color meta.
+ */
+html {
+  color-scheme: light;
+  background-color: #f8fafc;
+}
+
+html.dark {
+  color-scheme: dark;
+  background-color: #020617;
+}
+
+body {
+  background-color: inherit;
+}
+
 body {
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
