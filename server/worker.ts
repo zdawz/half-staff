@@ -21,7 +21,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Resource-Policy': 'same-origin',
   'Content-Security-Policy':
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.bigdatacloud.net; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.bigdatacloud.net; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
 };
 
 function withSecurityHeaders(response: Response): Response {
@@ -42,7 +42,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname.startsWith('/api/locate')) {
+    if (url.pathname === '/api/locate' || url.pathname === '/api/locate/') {
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         return withSecurityHeaders(
           new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
@@ -82,7 +82,7 @@ export default {
       );
     }
 
-    if (url.pathname.startsWith('/api/flag-status')) {
+    if (url.pathname === '/api/flag-status' || url.pathname === '/api/flag-status/') {
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         return withSecurityHeaders(
           new Response(JSON.stringify({ error: 'Method Not Allowed' }), {

@@ -349,9 +349,10 @@ export function App() {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             clearTimeout(safetyTimer);
+            // Round to ~1 km before it leaves the device; enough to resolve a state
             resolve({
-              lat: pos.coords.latitude,
-              lon: pos.coords.longitude,
+              lat: Math.round(pos.coords.latitude * 100) / 100,
+              lon: Math.round(pos.coords.longitude * 100) / 100,
             });
           },
           () => {

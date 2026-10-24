@@ -1079,9 +1079,12 @@ export async function resolveUserLocation(options: {
     lon <= 180
   ) {
     try {
+      // Reduce precision before forwarding to a third party: ~1 km is plenty to resolve a state
+      const coarseLat = lat.toFixed(2);
+      const coarseLon = lon.toFixed(2);
       const geoUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(
-        String(lat)
-      )}&longitude=${encodeURIComponent(String(lon))}&localityLanguage=en`;
+        coarseLat
+      )}&longitude=${encodeURIComponent(coarseLon)}&localityLanguage=en`;
       const res = await safeFetchText(geoUrl, {
         timeoutMs: 4000,
         accept: 'application/json',
@@ -1192,6 +1195,31 @@ let cachedPayload: { data: FlagStatusPayload; fetchedAtMs: number; expiresAt: nu
 // duplicate upstream calls (prevents request amplification against sources).
 let inFlight: Promise<FlagStatusPayload> | null = null;
 
+type SourceKey = 'hs' | 'wh' | 'wi' | 'md' | 'ia';
+type SourceResult = { notices: NormalizedNotice[]; ok: boolean; note?: string };
+
+// Last successful notices per upstream source. When a feed temporarily fails we keep
+// serving its last known notices instead of silently dropping them, which would
+// otherwise make the app falsely report "full-staff" during an upstream outage.
+const lastGoodNotices: Partial<Record<SourceKey, NormalizedNotice[]>> = {};
+
+function withLastGood(key: SourceKey, result: SourceResult): SourceResult & { stale: boolean } {
+  if (result.ok) {
+    lastGoodNotices[key] = result.notices;
+    return { ...result, stale: false };
+  }
+  const fallback = lastGoodNotices[key];
+  if (fallback) {
+    return {
+      notices: fallback,
+      ok: false,
+      note: `${result.note || 'Upstream feed unavailable'} — showing last known data`,
+      stale: true,
+    };
+  }
+  return { ...result, stale: false };
+}
+
 export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagStatusPayload> {
   const now = Date.now();
 
@@ -1214,13 +1242,25 @@ export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagSt
   }
 
   inFlight = (async () => {
-      const [hsResult, whResult, wiResult, mdResult, iaResult] = await Promise.all([
+      const [hsRaw, whRaw, wiRaw, mdRaw, iaRaw] = await Promise.all([
         fetchHalfStaffOrgNotices(),
         fetchWhiteHouseProclamations(),
         fetchWisconsinDirectNotices(),
         fetchMarylandDirectNotices(),
         fetchIowaDirectNotices(),
       ]);
+
+      const hsResult = withLastGood('hs', hsRaw);
+      const whResult = withLastGood('wh', whRaw);
+      const wiResult = withLastGood('wi', wiRaw);
+      const mdResult = withLastGood('md', mdRaw);
+      const iaResult = withLastGood('ia', iaRaw);
+
+      // If both primary feeds are down and nothing is known, refuse to claim a status
+      // (the client then shows "Unable to verify" instead of a false "full-staff").
+      if (!hsRaw.ok && !whRaw.ok && !hsResult.stale && !whResult.stale) {
+        throw new Error('All primary upstream feeds unavailable');
+      }
 
       const merged: NormalizedNotice[] = [...hsResult.notices];
 
@@ -1285,6 +1325,7 @@ export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagSt
             name: 'MN Governor Flag Status & GovDelivery',
             url: 'https://mn.gov/governor/newsroom/flag-status/',
             status: hsResult.ok ? 'ok' : 'degraded',
+            note: hsResult.note,
           },
           {
             name: 'Direct State Portals (WI, MD, IA)',

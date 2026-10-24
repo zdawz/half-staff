@@ -9,7 +9,8 @@ export function flagApiPlugin(): Plugin {
     use: (fn: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => void;
   }) => {
     middlewares.use(async (req, res, next) => {
-      if (!req.url || (!req.url.startsWith('/api/flag-status') && !req.url.startsWith('/api/locate'))) {
+      const pathname = req.url ? new URL(req.url, 'http://localhost').pathname.replace(/\/$/, '') : '';
+      if (pathname !== '/api/flag-status' && pathname !== '/api/locate') {
         next();
         return;
       }
@@ -27,9 +28,9 @@ export function flagApiPlugin(): Plugin {
       }
 
       try {
-        const url = new URL(req.url, 'http://localhost');
+        const url = new URL(req.url || '/', 'http://localhost');
 
-        if (url.pathname.startsWith('/api/locate')) {
+        if (pathname === '/api/locate') {
           const latParam = url.searchParams.get('lat');
           const lonParam = url.searchParams.get('lon');
           const lat = latParam !== null ? Number.parseFloat(latParam) : null;
