@@ -1,4 +1,4 @@
-const CACHE_NAME = 'half-staff-pwa-v4';
+const CACHE_NAME = 'half-staff-pwa-v5';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -86,7 +86,7 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => cachedResponse);
+        .catch(() => cachedResponse || Response.error());
 
       return cachedResponse || fetchPromise;
     })

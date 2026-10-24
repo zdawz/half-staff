@@ -1,5 +1,8 @@
 import React from 'react';
 
+// D.C. and territories should not be labeled "STATE" on the flag pennant
+const NON_STATE_CODES = new Set(['DC', 'PR', 'GU', 'VI', 'AS', 'MP']);
+
 interface FlagpoleGraphicProps {
   isHalfStaff: boolean;
   scope?: 'federal' | 'state' | 'both' | 'none';
@@ -161,7 +164,8 @@ export const FlagpoleGraphic: React.FC<FlagpoleGraphicProps> = ({
               {!isNeutral && isHalfStaff && stateCode && (scope === 'state' || scope === 'both') && (
                 <div className="mt-1 flex items-center">
                   <div className="flex h-4 items-center rounded-r bg-sky-800 px-1.5 text-[9px] font-bold tracking-wider text-white shadow ring-1 ring-sky-400/40 dark:bg-sky-900/95 dark:text-sky-100">
-                    {stateCode} STATE
+                    {stateCode}
+                    {NON_STATE_CODES.has(stateCode) ? '' : ' STATE'}
                   </div>
                 </div>
               )}

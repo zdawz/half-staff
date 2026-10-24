@@ -290,14 +290,28 @@ export function formatDateRange(dateStart: string, dateEnd: string | null, isOng
   return `${startFmt} – ${endFmt}`;
 }
 
+/**
+ * Computes compact all-day start/end (exclusive) dates for calendar exports.
+ * Never throws on malformed upstream dates (an invalid Date would otherwise make
+ * `toISOString()` throw a RangeError during render).
+ */
+function getCalendarDateRange(notice: NormalizedNotice): { start: string; end: string } {
+  const parse = (iso: string | null | undefined): Date | null => {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+    const d = new Date(iso + 'T12:00:00Z');
+    return isNaN(d.getTime()) ? null : d;
+  };
+  const startDate = parse(notice.dateStart) || new Date();
+  const endDate = parse(notice.dateEnd) || new Date(startDate.getTime());
+  if (endDate < startDate) endDate.setTime(startDate.getTime());
+  // For all-day events, the end date is exclusive (day after dateEnd)
+  endDate.setUTCDate(endDate.getUTCDate() + 1);
+  const compact = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  return { start: compact(startDate), end: compact(endDate) };
+}
+
 export function getGoogleCalendarUrl(notice: NormalizedNotice): string {
-  const startClean = notice.dateStart.replace(/[^0-9]/g, '').slice(0, 8);
-  // For all-day Google Calendar events, end date is exclusive (day after dateEnd)
-  const endBase = notice.dateEnd
-    ? new Date(notice.dateEnd + 'T12:00:00Z')
-    : new Date(notice.dateStart + 'T12:00:00Z');
-  endBase.setUTCDate(endBase.getUTCDate() + 1);
-  const endClean = endBase.toISOString().slice(0, 10).replace(/-/g, '');
+  const { start: startClean, end: endClean } = getCalendarDateRange(notice);
 
   const scopePrefix =
     notice.scope === 'federal'
@@ -320,19 +334,38 @@ export function getGoogleCalendarUrl(notice: NormalizedNotice): string {
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
+/**
+ * Folds an iCalendar content line to 75 octets per RFC 5545 §3.1.
+ */
+function foldIcsLine(line: string): string {
+  const encoder = new TextEncoder();
+  const parts: string[] = [];
+  let current = '';
+  let currentBytes = 0;
+  for (const ch of line) {
+    const chBytes = encoder.encode(ch).length;
+    const limit = parts.length === 0 ? 75 : 74; // continuation lines start with a space
+    if (currentBytes + chBytes > limit) {
+      parts.push(current);
+      current = '';
+      currentBytes = 0;
+    }
+    current += ch;
+    currentBytes += chBytes;
+  }
+  parts.push(current);
+  return parts.join('\r\n ');
+}
+
 export function downloadNoticeIcs(notice: NormalizedNotice): void {
-  const startClean = notice.dateStart.replace(/[^0-9]/g, '').slice(0, 8);
-  // For all-day ICS events, DTEND is exclusive (day after dateEnd)
-  const endBase = notice.dateEnd ? new Date(notice.dateEnd + 'T12:00:00Z') : new Date(notice.dateStart + 'T12:00:00Z');
-  endBase.setUTCDate(endBase.getUTCDate() + 1);
-  const endClean = endBase.toISOString().slice(0, 10).replace(/-/g, '');
+  const { start: startClean, end: endClean } = getCalendarDateRange(notice);
 
   const escapeIcs = (str: string) =>
     str
       .replace(/\\/g, '\\\\')
       .replace(/;/g, '\\;')
       .replace(/,/g, '\\,')
-      .replace(/\r?\n/g, '\\n');
+      .replace(/\r?\n|\r/g, '\\n');
 
   const safeUid = notice.id.replace(/[^a-zA-Z0-9_-]/g, '');
   const safeSourceUrl = toSafeHttpUrl(notice.sourceUrl).replace(/[\r\n]/g, '');
@@ -355,7 +388,9 @@ export function downloadNoticeIcs(notice: NormalizedNotice): void {
     `URL:${safeSourceUrl}`,
     'END:VEVENT',
     'END:VCALENDAR',
-  ].join('\r\n');
+  ]
+    .map(foldIcsLine)
+    .join('\r\n');
 
   const safeDateSlug = notice.dateStart.replace(/[^0-9-]/g, '').slice(0, 10) || 'event';
   const blob = new Blob([icsLines], { type: 'text/calendar;charset=utf-8' });
@@ -366,5 +401,6 @@ export function downloadNoticeIcs(notice: NormalizedNotice): void {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Revoking synchronously can cancel the download in Safari/Firefox
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

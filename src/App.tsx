@@ -36,6 +36,7 @@ import {
 const STORAGE_STATE_KEY = 'halfstaff_selected_state';
 const STORAGE_ALERT_KEY = 'halfstaff_alerts_enabled';
 const STORAGE_THEME_KEY = 'halfstaff_theme_preference';
+const STORAGE_LAST_NOTIFIED_KEY = 'halfstaff_last_notified_id';
 const INITIAL_HISTORY_LIMIT = 8;
 
 /**
@@ -223,7 +224,16 @@ export function App() {
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const lastNotifiedIdRef = useRef<string | null>(null);
+  const lastNotifiedIdRef = useRef<string | null>(
+    (() => {
+      try {
+        return localStorage.getItem(STORAGE_LAST_NOTIFIED_KEY);
+      } catch {
+        return null;
+      }
+    })()
+  );
+  const inFlightStatusRef = useRef<boolean>(false);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -244,6 +254,7 @@ export function App() {
     setActivePrimaryIndex(0);
     setShowHeroFullText(false);
     setVisibleHistoryCount(INITIAL_HISTORY_LIMIT);
+    setExpandedHistoryId(null);
     try {
       localStorage.setItem(STORAGE_STATE_KEY, cleanCode);
     } catch {
@@ -253,6 +264,9 @@ export function App() {
 
   const fetchStatus = useCallback(
     async (force = false) => {
+      // Skip background polls while another request is pending (forced refreshes always run)
+      if (!force && inFlightStatusRef.current) return;
+      inFlightStatusRef.current = true;
       const startMs = Date.now();
       if (force) setRefreshing(true);
       let ok = false;
@@ -272,6 +286,7 @@ export function App() {
       } catch {
         setFetchError(true);
       } finally {
+        inFlightStatusRef.current = false;
         if (force) {
           const elapsed = Date.now() - startMs;
           if (elapsed < 400) {
@@ -293,10 +308,22 @@ export function App() {
   useEffect(() => {
     fetchStatus(false);
     const interval = setInterval(() => {
-      fetchStatus(false);
       setNowTick(Date.now());
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        fetchStatus(false);
+      }
     }, 60_000);
-    return () => clearInterval(interval);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        setNowTick(Date.now());
+        fetchStatus(false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [fetchStatus]);
 
   const detectUserState = async () => {
@@ -468,19 +495,9 @@ export function App() {
     return US_STATES.find((s) => s.code === selectedState)?.name || selectedState;
   }, [selectedState]);
 
-  // Use local calendar date by default; only honor payload.referenceDate if it's an explicit non-today override
-  const todayDate = useMemo(() => {
-    const localIso = getLocalDateIso(new Date(nowTick));
-    const utcIso = new Date(nowTick).toISOString().slice(0, 10);
-    if (
-      payload?.referenceDate &&
-      payload.referenceDate !== utcIso &&
-      payload.referenceDate !== localIso
-    ) {
-      return payload.referenceDate;
-    }
-    return localIso;
-  }, [payload, nowTick]);
+  // Always evaluate orders against the viewer's local calendar date. The server's
+  // referenceDate is computed in a fixed timezone and would be wrong for viewers elsewhere.
+  const todayDate = useMemo(() => getLocalDateIso(new Date(nowTick)), [nowTick]);
 
   const relevantNotices = useMemo(() => {
     if (!payload) return [];
@@ -536,6 +553,11 @@ export function App() {
     if (!alertsEnabled || !primaryNotice || !supportsNotifications) return;
     if (lastNotifiedIdRef.current === primaryNotice.id) return;
     lastNotifiedIdRef.current = primaryNotice.id;
+    try {
+      localStorage.setItem(STORAGE_LAST_NOTIFIED_KEY, primaryNotice.id);
+    } catch {
+      // ignore
+    }
 
     if (Notification.permission === 'granted') {
       try {
@@ -586,8 +608,8 @@ export function App() {
 
       {/* Minimal Top Bar — Sized so iPhone 15 Pro (393px) and smaller screens never overflow */}
       <header className="relative z-20 mx-auto flex w-full max-w-md sm:max-w-xl md:max-w-2xl lg:max-w-3xl items-center justify-between gap-2 px-4 sm:px-6 pt-3.5 pb-1.5">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <div className="relative flex min-w-0 items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <div className="relative flex min-w-0 max-w-[156px] flex-1 items-center sm:max-w-[210px]">
             <MapPin
               aria-hidden="true"
               className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400"
@@ -596,7 +618,7 @@ export function App() {
               aria-label="Select State or Territory"
               value={selectedState}
               onChange={(e) => handleStateChange(e.target.value)}
-              className="h-9 max-w-[156px] sm:max-w-[210px] truncate appearance-none rounded-full border border-slate-300 bg-white/95 pl-7 pr-6 text-xs font-medium text-slate-800 shadow-xs transition hover:border-slate-400 focus:border-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:focus:border-slate-500"
+              className="h-9 w-full min-w-0 truncate appearance-none rounded-full border border-slate-300 bg-white/95 pl-7 pr-6 text-xs font-medium text-slate-800 shadow-xs transition hover:border-slate-400 focus:border-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:focus:border-slate-500"
             >
               <optgroup label="U.S. States">
                 {US_STATES_ONLY.map((st) => (
@@ -650,7 +672,7 @@ export function App() {
               aria-pressed={alertsEnabled}
               title={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
               aria-label={alertsEnabled ? 'Half-staff alerts enabled' : 'Enable half-staff alerts'}
-              className={`flex h-9 shrink-0 items-center gap-1 rounded-full border px-2.5 sm:px-3 text-xs font-medium whitespace-nowrap shadow-xs transition ${
+              className={`flex h-9 min-w-9 shrink-0 items-center justify-center gap-1 rounded-full border px-2.5 sm:px-3 text-xs font-medium whitespace-nowrap shadow-xs transition ${
                 alertsEnabled
                   ? 'border-amber-500/60 bg-amber-500/15 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300'
                   : 'border-slate-300 bg-white/95 text-slate-700 hover:border-slate-400 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white'
@@ -664,7 +686,9 @@ export function App() {
               ) : (
                 <Bell aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
               )}
-              <span className="text-[11px]">{alertsEnabled ? 'Alerts On' : 'Alerts'}</span>
+              <span className="hidden text-[11px] sm:inline">
+                {alertsEnabled ? 'Alerts On' : 'Alerts'}
+              </span>
             </button>
           )}
 
@@ -704,10 +728,10 @@ export function App() {
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        className="pointer-events-none fixed top-16 left-1/2 z-50 -translate-x-1/2"
+        className="pointer-events-none fixed top-16 left-1/2 z-50 w-max max-w-[90vw] -translate-x-1/2"
       >
         {toastMessage && (
-          <div className="max-w-[90vw] truncate rounded-full border border-slate-300 bg-white/95 px-4 py-1.5 text-xs font-medium whitespace-nowrap text-slate-800 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200">
+          <div className="rounded-2xl border border-slate-300 bg-white/95 px-4 py-1.5 text-center text-xs font-medium text-balance text-slate-800 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200">
             {toastMessage}
           </div>
         )}
@@ -1149,8 +1173,8 @@ export function App() {
                           </div>
                         )}
 
-                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2.5 text-[11px] sm:text-xs whitespace-nowrap dark:border-slate-800/60">
-                          <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-slate-200/80 pt-2.5 text-[11px] sm:text-xs whitespace-nowrap dark:border-slate-800/60">
+                          <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 sm:gap-x-3.5">
                             <a
                               href={toSafeHttpUrl(notice.sourceUrl)}
                               target="_blank"
@@ -1174,7 +1198,8 @@ export function App() {
                                 aria-hidden="true"
                                 className="h-3 w-3 shrink-0 text-slate-500 dark:text-slate-400"
                               />
-                              <span>Google Calendar</span>
+                              <span className="sm:hidden">Calendar</span>
+                              <span className="hidden sm:inline">Google Calendar</span>
                             </a>
 
                             <button

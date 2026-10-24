@@ -35,7 +35,8 @@ export function flagApiPlugin(): Plugin {
           const lat = latParam !== null ? Number.parseFloat(latParam) : null;
           const lon = lonParam !== null ? Number.parseFloat(lonParam) : null;
 
-          const result = await resolveUserLocation({ lat, lon });
+          // The dev server runs on the visitor's own network, so a server-side IP lookup is meaningful here
+          const result = await resolveUserLocation({ lat, lon, allowServerIpLookup: true });
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.setHeader('Cache-Control', 'no-store');

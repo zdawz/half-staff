@@ -496,6 +496,28 @@ function hashId(input: string): string {
   return (h >>> 0).toString(36);
 }
 
+/**
+ * Exact or subdomain hostname match (prevents look-alike hosts such as
+ * `whitehouse.gov.attacker.example` from receiving an official label).
+ */
+function hostMatches(host: string, domain: string): boolean {
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Returns a YYYY-MM-DD string only if it represents a real calendar date.
+ */
+export function toValidIsoDate(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const candidate = raw.trim().slice(0, 10);
+  if (!ISO_DATE_RE.test(candidate)) return null;
+  const d = new Date(`${candidate}T00:00:00Z`);
+  if (isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== candidate) return null;
+  return candidate;
+}
+
 function extractOfficialSource(
   content: string,
   stateCode: string | null,
@@ -516,14 +538,17 @@ function extractOfficialSource(
     if (safeUrl) {
       try {
         const parsed = new URL(safeUrl);
-        const host = parsed.hostname.replace(/^www\./, '');
-        if (host.includes('whitehouse.gov')) {
+        const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+        if (hostMatches(host, 'whitehouse.gov')) {
           return { url: safeUrl, label: 'White House Proclamation' };
         }
-        if (host.includes('mn.gov') || safeUrl.includes('MNGOV')) {
+        if (
+          hostMatches(host, 'mn.gov') ||
+          (hostMatches(host, 'govdelivery.com') && /MNGOV/.test(parsed.pathname + parsed.search))
+        ) {
           return { url: safeUrl, label: 'MN Governor Proclamation' };
         }
-        if (host.includes('govdelivery.com')) {
+        if (hostMatches(host, 'govdelivery.com')) {
           return { url: safeUrl, label: `${stateCode || 'Official'} Governor Proclamation` };
         }
         return { url: safeUrl, label: `Official Source (${host})` };
@@ -623,9 +648,11 @@ function normalizeHalfStaffPost(post: RawHalfStaffPost): NormalizedNotice {
   const scope: 'federal' | 'state' =
     post.type === 'Federal' && !stateCode ? 'federal' : 'state';
 
-  const rawEnd = (post.date_end || '').trim();
-  const isOngoing = !rawEnd || rawEnd.toLowerCase() === 'undetermined';
-  const dateEnd = isOngoing ? null : rawEnd;
+  const dateStart = toValidIsoDate(post.date_start) || '';
+  const validEnd = toValidIsoDate(post.date_end);
+  // Treat missing, "undetermined", malformed, or inverted end dates as ongoing
+  const dateEnd = validEnd && validEnd >= dateStart ? validEnd : null;
+  const isOngoing = dateEnd === null;
 
   const official = extractOfficialSource(post.content || '', stateCode, scope);
   const halfStaffPermalink = sanitizeHttpUrl(post.permalink, 'https://halfstaff.org/');
@@ -655,8 +682,8 @@ function normalizeHalfStaffPost(post: RawHalfStaffPost): NormalizedNotice {
     title: cleanTitle,
     summary,
     fullText,
-    dateStart: String(post.date_start || '').slice(0, 10),
-    dateEnd: dateEnd ? String(dateEnd).slice(0, 10) : null,
+    dateStart,
+    dateEnd,
     isOngoing,
     scope,
     stateCode,
@@ -691,7 +718,7 @@ async function fetchHalfStaffOrgNotices(): Promise<{
       return { notices: [], ok: false, note: 'Invalid payload format' };
     }
     const notices = rawPosts
-      .filter((p) => p && typeof p.date_start === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.date_start))
+      .filter((p) => p && typeof p === 'object' && toValidIsoDate(p.date_start) !== null)
       .map(normalizeHalfStaffPost);
     return { notices, ok: true };
   } catch {
@@ -827,7 +854,7 @@ async function fetchWisconsinDirectNotices(): Promise<{
         : `${rawTitle.replace(/\.+$/, '')}.`;
       const fullText = bodyContent ? `${rawTitle}\n\n${bodyContent}` : summary;
 
-      let dateStart = (p.date || '').slice(0, 10);
+      let dateStart = toValidIsoDate(p.date) || '';
       const dateMatch = excerpt.match(
         /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z.]*\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i
       );
@@ -839,6 +866,8 @@ async function fetchWisconsinDirectNotices(): Promise<{
           dateStart = parsed.toISOString().slice(0, 10);
         }
       }
+
+      if (!dateStart) continue;
 
       notices.push({
         id: `wi-${Number.isFinite(Number(p.id)) ? Number(p.id) : hashId(rawTitle)}`,
@@ -904,7 +933,7 @@ async function fetchMarylandDirectNotices(): Promise<{
       const summary = bodyText.replace(/\n+/g, ' ').trim();
 
       notices.push({
-        id: `md-${dateIso}`,
+        id: `md-${dateIso}-${hashId(bodyText || title)}`,
         title,
         summary,
         fullText: bodyText || summary,
@@ -961,6 +990,7 @@ async function fetchIowaDirectNotices(): Promise<{
         const d2 = new Date(`${rangeMatch[2]} 12:00:00 UTC`);
         if (!isNaN(d1.getTime())) dateStart = d1.toISOString().slice(0, 10);
         if (!isNaN(d2.getTime())) dateEnd = d2.toISOString().slice(0, 10);
+        if (dateEnd < dateStart) dateEnd = dateStart;
       }
 
       const honorMatch =
@@ -978,7 +1008,7 @@ async function fetchIowaDirectNotices(): Promise<{
       }
 
       notices.push({
-        id: `ia-${dateStart}`,
+        id: `ia-${dateStart}-${hashId(relUrl)}`,
         title: cleanTitle,
         summary: rawBody,
         fullText: rawBody || rawTitle,
@@ -1028,8 +1058,14 @@ export async function resolveUserLocation(options: {
   lon?: number | null;
   cfRegionCode?: string | null;
   cfCountry?: string | null;
+  /**
+   * Whether to fall back to an IP lookup performed from the server itself. Only
+   * meaningful when the server shares the visitor's network (local dev); on an edge
+   * runtime it would geolocate the data center instead of the visitor.
+   */
+  allowServerIpLookup?: boolean;
 }): Promise<LocationResult> {
-  const { lat, lon, cfRegionCode, cfCountry } = options;
+  const { lat, lon, cfRegionCode, cfCountry, allowServerIpLookup = false } = options;
 
   // 1. Reverse-geocode explicit GPS coordinates if provided
   if (
@@ -1090,7 +1126,11 @@ export async function resolveUserLocation(options: {
     }
   }
 
-  // 3. Server-side IP geolocation fallback (for local dev or when edge regionCode is absent)
+  if (!allowServerIpLookup) {
+    return { stateCode: null, stateName: null, source: 'none' };
+  }
+
+  // 3. Server-side IP geolocation fallback (local dev only)
   try {
     const res = await safeFetchText(
       'https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=en',
@@ -1144,10 +1184,13 @@ export async function resolveUserLocation(options: {
 }
 
 const CACHE_TTL_MS = 60_000;
-const MIN_FORCE_REFRESH_INTERVAL_MS = 3_000;
+const MIN_FORCE_REFRESH_INTERVAL_MS = 10_000;
 
 let cachedPayload: { data: FlagStatusPayload; fetchedAtMs: number; expiresAt: number } | null =
   null;
+// Shared in-flight upstream fetch so concurrent requests never fan out into
+// duplicate upstream calls (prevents request amplification against sources).
+let inFlight: Promise<FlagStatusPayload> | null = null;
 
 export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagStatusPayload> {
   const now = Date.now();
@@ -1157,7 +1200,7 @@ export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagSt
     if (!forceRefresh && cachedPayload.expiresAt > now) {
       return cachedPayload.data;
     }
-    // Rate-limit rapid forced cache refreshes (<3s) while updating fetchedAt timestamp
+    // Rate-limit rapid forced cache refreshes while updating fetchedAt timestamp
     if (forceRefresh && ageMs < MIN_FORCE_REFRESH_INTERVAL_MS) {
       return {
         ...cachedPayload.data,
@@ -1166,7 +1209,11 @@ export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagSt
     }
   }
 
-  return (async () => {
+  if (inFlight) {
+    return inFlight;
+  }
+
+  inFlight = (async () => {
       const [hsResult, whResult, wiResult, mdResult, iaResult] = await Promise.all([
         fetchHalfStaffOrgNotices(),
         fetchWhiteHouseProclamations(),
@@ -1255,5 +1302,9 @@ export async function getFlagStatusPayload(forceRefresh = false): Promise<FlagSt
       };
 
       return payload;
-  })();
+  })().finally(() => {
+    inFlight = null;
+  });
+
+  return inFlight;
 }
